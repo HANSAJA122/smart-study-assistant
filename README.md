@@ -1,6 +1,6 @@
 # StudyAI - Smart Study Assistant
 
-A full-stack AI-powered study assistant built with **Next.js 15**, **TypeScript**, **Tailwind CSS**, **Prisma**, **PostgreSQL**, **NextAuth**, and **OpenAI API**.
+A full-stack AI-powered study assistant built with **Next.js 15**, **TypeScript**, **Tailwind CSS**, **Prisma**, **PostgreSQL**, **NextAuth**, and **Google Gemini API**.
 
 ## Features
 
@@ -24,7 +24,7 @@ A full-stack AI-powered study assistant built with **Next.js 15**, **TypeScript*
 | UI Components | shadcn/ui + Radix UI |
 | Database | PostgreSQL + Prisma ORM |
 | Auth | NextAuth v5 (Auth.js) |
-| AI | OpenAI GPT-3.5 Turbo |
+| AI | Google Gemini 3.1 Flash Lite Preview |
 | Charts | Recharts |
 | Validation | Zod |
 | Icons | Lucide React |
@@ -67,7 +67,7 @@ src/
 │   ├── auth.ts           # NextAuth configuration
 │   ├── auth-utils.ts     # Auth helper functions
 │   ├── db.ts             # Prisma client singleton
-│   ├── openai.ts         # OpenAI client
+│   ├── gemini.ts         # Google Gemini AI client
 │   ├── utils.ts          # Utility functions
 │   └── validations.ts    # Zod schemas
 ├── types/
@@ -82,7 +82,7 @@ prisma/
 
 - **Node.js** 18+ installed
 - **PostgreSQL** database running locally or remotely
-- **OpenAI API key** from [platform.openai.com](https://platform.openai.com/api-keys)
+- **Gemini API key** from [aistudio.google.com](https://aistudio.google.com/apikey)
 
 ## Getting Started
 
@@ -107,7 +107,7 @@ Edit `.env` with your actual values:
 DATABASE_URL="postgresql://username:password@localhost:5432/study_assistant?schema=public"
 AUTH_SECRET="generate-with: openssl rand -base64 32"
 AUTH_URL="http://localhost:3000"
-OPENAI_API_KEY="sk-your-openai-api-key"
+GEMINI_API_KEY="your-gemini-api-key"
 ```
 
 ### 3. Set up the database

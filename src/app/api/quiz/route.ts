@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { generateJSON } from "@/lib/openai";
+import { generateJSON } from "@/lib/gemini";
 import { quizGenerateSchema } from "@/lib/validations";
 
 interface GeneratedQuestion {
@@ -109,7 +109,8 @@ export async function POST(req: Request) {
     console.error("Quiz POST error:", error);
     const message =
       error instanceof Error ? error.message : "Failed to generate quiz.";
-    return NextResponse.json({ error: message }, { status: 500 });
+    const status = message.includes("high demand") || message.includes("unavailable") ? 503 : 500;
+    return NextResponse.json({ error: message }, { status });
   }
 }
 

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { generateText } from "@/lib/openai";
+import { generateText } from "@/lib/gemini";
 
 export async function POST(req: Request) {
   try {
@@ -53,6 +53,7 @@ export async function POST(req: Request) {
     console.error("Summarize error:", error);
     const message =
       error instanceof Error ? error.message : "Failed to summarize note.";
-    return NextResponse.json({ error: message }, { status: 500 });
+    const status = message.includes("high demand") || message.includes("unavailable") ? 503 : 500;
+    return NextResponse.json({ error: message }, { status });
   }
 }
