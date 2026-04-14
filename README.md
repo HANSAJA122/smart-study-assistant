@@ -1,43 +1,147 @@
-# StudyAI - Smart Study Assistant
+# Smart Study Assistant
 
-A full-stack AI-powered study assistant built with **Next.js 15**, **TypeScript**, **Tailwind CSS**, **Prisma**, **PostgreSQL**, **NextAuth**, and **Ollama** (local AI).
+A full-stack, AI-powered study companion that helps students learn more effectively. Built with Next.js and powered by **Ollama local AI** — all AI features run entirely on your machine with no API keys, no cloud costs, and full privacy.
 
 ## Features
 
-- **Notes Summarizer** — Create notes and generate AI-powered summaries
-- **Quiz Generator** — Generate multiple-choice quizzes on any topic with AI
-- **Flashcard Creator** — AI-generated flashcards with study mode and mastery tracking
-- **Study Planner** — Create study plans with tasks and track completion
-- **AI Chat Tutor** — Interactive AI tutor that explains concepts conversationally
-- **Progress Tracker** — Analytics dashboard with charts (bar, line, pie)
-- **Authentication** — Secure signup/login with NextAuth credentials
-- **Dark/Light Mode** — Theme toggle with system preference detection
-- **Responsive UI** — Mobile-first design that works on all screen sizes
+| Feature | Description |
+|---------|-------------|
+| **AI Tutor** | Chat with an AI study tutor that explains concepts, answers questions, and suggests study strategies |
+| **Notes Summarizer** | Create study notes and generate concise AI-powered summaries with one click |
+| **Quiz Generator** | Instantly generate multiple-choice quizzes on any topic to test your knowledge |
+| **Flashcard Generator** | AI-created flashcards with a study mode, card flipping, and mastery tracking |
+| **Study Planner** | Build study plans with tasks, deadlines, and completion tracking |
+| **Progress Tracking** | Visual analytics dashboard with bar, line, and pie charts to monitor your learning |
+
+### Additional Highlights
+
+- Secure authentication (signup/login) with NextAuth
+- Dark and light mode with system preference detection
+- Fully responsive — works on desktop, tablet, and mobile
+- Clean, modern UI built with shadcn/ui and Radix primitives
 
 ## Tech Stack
 
-| Category | Technology |
-|----------|-----------|
-| Framework | Next.js 15 (App Router) |
-| Language | TypeScript |
-| Styling | Tailwind CSS v4 |
-| UI Components | shadcn/ui + Radix UI |
-| Database | PostgreSQL + Prisma ORM |
-| Auth | NextAuth v5 (Auth.js) |
-| AI | Ollama (local) + Gemma 3 |
+| Layer | Technology |
+|-------|-----------|
+| Framework | **Next.js 15** (App Router) |
+| Language | **TypeScript** |
+| Styling | **Tailwind CSS v4** |
+| UI | **shadcn/ui** + Radix UI |
+| Database | **PostgreSQL** + Prisma ORM |
+| Auth | **NextAuth v5** (Auth.js) |
+| AI | **Ollama** (local) — Gemma 3 model |
 | Charts | Recharts |
 | Validation | Zod |
-| Icons | Lucide React |
+
+## AI Setup (Ollama Local)
+
+This project uses [Ollama](https://ollama.com) to run AI models locally. No API key is needed.
+
+### 1. Install Ollama
+
+Download and install from **[ollama.com](https://ollama.com)**, or use a package manager:
+
+```bash
+# macOS
+brew install ollama
+
+# Linux
+curl -fsSL https://ollama.com/install.sh | sh
+```
+
+### 2. Pull the AI model
+
+```bash
+ollama pull gemma3
+```
+
+This downloads Google's Gemma 3 model (~3.9 GB). Only needs to run once.
+
+### 3. Start the Ollama server
+
+```bash
+ollama serve
+```
+
+Or, to start and interact with the model directly:
+
+```bash
+ollama run gemma3
+```
+
+Keep Ollama running in a separate terminal while using the app.
+
+### 4. Verify it's working
+
+```bash
+curl http://localhost:11434/api/tags
+```
+
+You should see `gemma3` listed in the response.
+
+> **Note:** Ollama must be running at `http://localhost:11434` for AI features (chat, summarize, quiz, flashcards) to work. All other features (auth, planner, notes CRUD, progress) work without it.
+
+## Project Setup
+
+### 1. Clone the repository
+
+```bash
+git clone https://github.com/HANSAJA122/smart-study-assistant.git
+cd smart-study-assistant
+```
+
+### 2. Install dependencies
+
+```bash
+npm install
+```
+
+### 3. Configure environment variables
+
+```bash
+cp .env.example .env
+```
+
+Edit `.env` with your values:
+
+```env
+DATABASE_URL="postgresql://username:password@localhost:5432/study_assistant?schema=public"
+AUTH_SECRET="generate-with: openssl rand -base64 32"
+AUTH_URL="http://localhost:3000"
+
+# Ollama — no API key needed, these defaults work out of the box
+OLLAMA_BASE_URL="http://localhost:11434"
+OLLAMA_MODEL="gemma3"
+```
+
+### 4. Set up the database
+
+```bash
+createdb study_assistant
+npx prisma generate
+npx prisma db push
+```
+
+### 5. Start the app
+
+```bash
+# Terminal 1 — Ollama
+ollama serve
+
+# Terminal 2 — Next.js
+npm run dev
+```
+
+Open **[http://localhost:3000](http://localhost:3000)** to use the app.
 
 ## Project Structure
 
 ```
 src/
 ├── app/
-│   ├── (auth)/           # Login & Signup pages
-│   │   ├── login/
-│   │   └── signup/
-│   ├── (protected)/      # Authenticated pages
+│   ├── (auth)/              # Login & Signup pages
+│   ├── (protected)/         # Authenticated pages
 │   │   ├── dashboard/
 │   │   ├── notes/
 │   │   ├── quiz/
@@ -46,209 +150,68 @@ src/
 │   │   ├── chat/
 │   │   ├── progress/
 │   │   └── profile/
-│   ├── api/              # API route handlers
-│   │   ├── auth/
-│   │   ├── notes/
-│   │   ├── summarize/
-│   │   ├── quiz/
-│   │   ├── flashcards/
-│   │   ├── planner/
-│   │   ├── chat/
-│   │   ├── progress/
-│   │   └── subjects/
-│   ├── globals.css
-│   ├── layout.tsx
-│   └── page.tsx          # Landing page
+│   └── api/                 # API route handlers
+│       ├── auth/
+│       ├── notes/
+│       ├── summarize/
+│       ├── quiz/
+│       ├── flashcards/
+│       ├── planner/
+│       ├── chat/
+│       ├── progress/
+│       └── subjects/
 ├── components/
-│   ├── layout/           # App shell, sidebar, navbar
-│   ├── shared/           # Theme provider, loading states
-│   └── ui/               # Reusable UI components (shadcn/ui)
+│   ├── layout/              # App shell, sidebar, navbar
+│   ├── shared/              # Theme provider, loading states
+│   └── ui/                  # Reusable UI components (shadcn/ui)
 ├── lib/
-│   ├── auth.ts           # NextAuth configuration
-│   ├── auth-utils.ts     # Auth helper functions
-│   ├── db.ts             # Prisma client singleton
-│   ├── ollama.ts         # Ollama local AI client
-│   ├── utils.ts          # Utility functions
-│   └── validations.ts    # Zod schemas
-├── types/
-│   └── next-auth.d.ts    # NextAuth type extensions
-└── generated/
-    └── prisma/           # Generated Prisma client
-prisma/
-└── schema.prisma         # Database schema
+│   ├── auth.ts              # NextAuth configuration
+│   ├── db.ts                # Prisma client singleton
+│   ├── ollama.ts            # Ollama AI client
+│   ├── utils.ts             # Utility functions
+│   └── validations.ts       # Zod schemas
+└── types/
+    └── next-auth.d.ts       # NextAuth type extensions
 ```
-
-## Prerequisites
-
-- **Node.js** 18+ installed
-- **PostgreSQL** database running locally or remotely
-- **Ollama** installed locally (see setup below)
-
-## Ollama Setup
-
-### 1. Install Ollama
-
-**macOS:**
-
-```bash
-brew install ollama
-```
-
-Or download from [ollama.com/download](https://ollama.com/download).
-
-**Linux:**
-
-```bash
-curl -fsSL https://ollama.com/install.sh | sh
-```
-
-**Windows:**
-
-Download the installer from [ollama.com/download](https://ollama.com/download).
-
-### 2. Pull the model
-
-```bash
-ollama pull gemma3
-```
-
-This downloads the Gemma 3 model (~3.9 GB). It only needs to run once.
-
-### 3. Start the Ollama server
-
-```bash
-ollama serve
-```
-
-The server runs at `http://localhost:11434` by default. Keep this terminal open while using the app.
-
-### 4. Verify it works
-
-```bash
-curl http://localhost:11434/api/tags
-```
-
-You should see `gemma3` in the model list.
-
-## Getting Started
-
-### 1. Clone and install dependencies
-
-```bash
-cd "Study Assistant"
-npm install
-```
-
-### 2. Configure environment variables
-
-Copy the example env file and fill in your values:
-
-```bash
-cp .env.example .env
-```
-
-Edit `.env` with your actual values:
-
-```env
-DATABASE_URL="postgresql://username:password@localhost:5432/study_assistant?schema=public"
-AUTH_SECRET="generate-with: openssl rand -base64 32"
-AUTH_URL="http://localhost:3000"
-
-# Ollama (defaults work out of the box — no API key needed)
-OLLAMA_BASE_URL="http://localhost:11434"
-OLLAMA_MODEL="gemma3"
-```
-
-### 3. Set up the database
-
-Create a PostgreSQL database:
-
-```bash
-createdb study_assistant
-```
-
-Generate Prisma client and run migrations:
-
-```bash
-npx prisma generate
-npx prisma db push
-```
-
-### 4. Start Ollama (in a separate terminal)
-
-```bash
-ollama serve
-```
-
-### 5. Start the development server
-
-```bash
-npm run dev
-```
-
-Open [http://localhost:3000](http://localhost:3000) to see the app.
-
-### 6. (Optional) View database with Prisma Studio
-
-```bash
-npx prisma studio
-```
-
-## Using a Different Model
-
-You can swap the AI model by changing `OLLAMA_MODEL` in your `.env` file:
-
-```env
-OLLAMA_MODEL="llama3.2"
-```
-
-Then pull it:
-
-```bash
-ollama pull llama3.2
-```
-
-Any Ollama-compatible model works. Smaller models are faster; larger models give better answers.
 
 ## API Endpoints
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | POST | `/api/auth/register` | Register new user |
-| GET/POST/DELETE | `/api/notes` | CRUD for notes |
-| POST | `/api/summarize` | AI-summarize a note |
+| GET/POST/DELETE | `/api/notes` | Notes CRUD |
+| POST | `/api/summarize` | AI-powered note summarization |
 | GET/POST/PUT | `/api/quiz` | Quiz generation and submission |
-| GET/POST/PUT/DELETE | `/api/flashcards` | Flashcard CRUD + mastery toggle |
-| GET/POST/PUT/DELETE | `/api/planner` | Study plan CRUD + task toggle |
-| GET/POST/DELETE | `/api/chat` | AI chat tutor messages |
-| GET | `/api/progress` | Progress stats and analytics |
+| GET/POST/PUT/DELETE | `/api/flashcards` | Flashcard CRUD with mastery toggle |
+| GET/POST/PUT/DELETE | `/api/planner` | Study plans and task management |
+| GET/POST/DELETE | `/api/chat` | AI tutor conversation |
+| GET | `/api/progress` | Progress analytics |
 | GET/POST | `/api/subjects` | Subject management |
 
-## Database Models
+## Using a Different Model
 
-- **User** — Account with auth credentials
-- **Subject** — Study subject/category
-- **Note** — Study notes with optional AI summary
-- **Quiz / QuizQuestion** — Generated quizzes with scoring
-- **Flashcard** — Front/back cards with mastery tracking
-- **StudyPlan / StudyTask** — Plans with task checklists
-- **Progress** — Score records for analytics
-- **ChatMessage** — AI tutor conversation history
+Swap the AI model by changing `OLLAMA_MODEL` in `.env`:
+
+```env
+OLLAMA_MODEL="llama3.2"
+```
+
+Then pull it: `ollama pull llama3.2`. Any Ollama-compatible model works.
+
+## Important Notes
+
+- **AI features require Ollama running locally.** Without it, chat, summarize, quiz, and flashcard generation will show a connection error — all other features continue to work normally.
+- **No API key is required.** Everything runs on your machine.
+- **For cloud deployment,** you would need an Ollama instance accessible from the server, or swap to a cloud AI provider (OpenAI, Gemini, etc.) by replacing `src/lib/ollama.ts`.
 
 ## Scripts
 
 ```bash
 npm run dev       # Start development server
-npm run build     # Build for production
+npm run build     # Production build
 npm run start     # Start production server
 npm run lint      # Run ESLint
 ```
-
-## Deployment
-
-For local deployment, just ensure Ollama is running on the same machine. For cloud deployment, you would need an Ollama instance accessible from the server, or switch back to a cloud AI provider.
-
-For the database, use a hosted PostgreSQL provider like **Neon**, **Supabase**, or **Railway**.
 
 ## License
 

@@ -38,8 +38,13 @@ function friendlyError(error: unknown): never {
 
 /**
  * Core function that calls the Ollama /api/chat endpoint (non-streaming).
+ * When jsonMode is true, Ollama constrains the output to valid JSON.
  */
-async function ollamaChat(messages: OllamaChatMessage[], temperature: number): Promise<string> {
+async function ollamaChat(
+  messages: OllamaChatMessage[],
+  temperature: number,
+  jsonMode = false
+): Promise<string> {
   let res: Response;
 
   try {
@@ -50,6 +55,7 @@ async function ollamaChat(messages: OllamaChatMessage[], temperature: number): P
         model: OLLAMA_MODEL,
         messages,
         stream: false,
+        ...(jsonMode && { format: "json" }),
         options: { temperature },
       }),
     });
@@ -92,25 +98,27 @@ export async function generateText(
 
 /**
  * Generates a response and parses it as JSON.
- * Strips markdown code fences the model may wrap around the output.
+ * Uses Ollama's JSON mode for reliable structured output.
+ * Accepts a `wrapperKey` — when provided the prompt should ask for
+ * `{ [wrapperKey]: [...] }` and this function extracts the inner array.
  */
 export async function generateJSON<T = unknown>(
   systemInstruction: string,
   userMessage: string,
-  opts?: { temperature?: number; maxOutputTokens?: number }
+  opts?: { temperature?: number; maxOutputTokens?: number; wrapperKey?: string }
 ): Promise<T> {
-  const raw = await generateText(systemInstruction, userMessage, {
-    temperature: opts?.temperature ?? 0.4,
-    maxOutputTokens: opts?.maxOutputTokens ?? 2048,
-  });
+  const messages: OllamaChatMessage[] = [
+    { role: "system", content: systemInstruction },
+    { role: "user", content: userMessage },
+  ];
 
-  // Strip markdown fences (```json ... ```) and any leading/trailing text
+  const raw = await ollamaChat(messages, opts?.temperature ?? 0.4, true);
+
   let cleaned = raw
     .replace(/^[\s\S]*?```(?:json)?\s*\n?/i, "")
     .replace(/\n?```[\s\S]*$/i, "")
     .trim();
 
-  // If the model didn't use fences, try to extract the first JSON array or object
   if (!cleaned.startsWith("[") && !cleaned.startsWith("{")) {
     const match = cleaned.match(/(\[[\s\S]*\]|\{[\s\S]*\})/);
     if (match) {
@@ -119,7 +127,21 @@ export async function generateJSON<T = unknown>(
   }
 
   try {
-    return JSON.parse(cleaned) as T;
+    const parsed = JSON.parse(cleaned);
+
+    // If a wrapperKey is specified, unwrap: { key: [...] } → [...]
+    if (opts?.wrapperKey && typeof parsed === "object" && !Array.isArray(parsed)) {
+      const inner = parsed[opts.wrapperKey];
+      if (Array.isArray(inner)) {
+        return inner as T;
+      }
+      // Try the first array-valued property as fallback
+      for (const val of Object.values(parsed)) {
+        if (Array.isArray(val)) return val as T;
+      }
+    }
+
+    return parsed as T;
   } catch {
     throw new Error(
       "The AI returned an unexpected response format. Please try again."

@@ -50,14 +50,14 @@ export async function POST(req: Request) {
     const { topic, numberOfCards, subjectId } = parsed.data;
 
     const cards = await generateJSON<GeneratedCard[]>(
-      `You are a flashcard creator for students. Create exactly ${numberOfCards} ` +
-        "flashcards about the given topic. Each card should have a concise question " +
-        "or term on the front and a clear answer or definition on the back. " +
-        "Return ONLY a JSON array with this schema:\n" +
-        '[{"front":"question or term","back":"answer or definition"}]\n' +
-        "Do NOT wrap the JSON in markdown fences. Do NOT include any text outside the array.",
-      `Create flashcards about: ${topic}`,
-      { temperature: 0.7, maxOutputTokens: 2500 }
+      "You are a flashcard creator. Respond with a JSON object containing a single key " +
+        '"flashcards" whose value is an array.\n' +
+        `Create exactly ${numberOfCards} flashcards.\n` +
+        'Each element has keys: "front" (question or term) and "back" (answer or definition).\n' +
+        "Example:\n" +
+        '{"flashcards":[{"front":"What is HTTP?","back":"HyperText Transfer Protocol, used for web communication."}]}',
+      `Topic: ${topic}`,
+      { temperature: 0.7, maxOutputTokens: 2500, wrapperKey: "flashcards" }
     );
 
     if (!Array.isArray(cards) || cards.length === 0) {

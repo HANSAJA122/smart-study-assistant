@@ -52,14 +52,15 @@ export async function POST(req: Request) {
     const { topic, numberOfQuestions, subjectId } = parsed.data;
 
     const questions = await generateJSON<GeneratedQuestion[]>(
-      `You are a quiz generator for students. Create exactly ${numberOfQuestions} ` +
-        "multiple-choice questions about the given topic. Each question must have " +
-        "exactly 4 options. Return ONLY a JSON array with this schema:\n" +
-        '[{"question":"...","options":["A","B","C","D"],"correctAnswer":0}]\n' +
-        "where correctAnswer is the 0-based index of the correct option. " +
-        "Do NOT wrap the JSON in markdown fences. Do NOT include any text outside the array.",
-      `Create a quiz about: ${topic}`,
-      { temperature: 0.7, maxOutputTokens: 2500 }
+      "You are a quiz generator. Respond with a JSON object containing a single key " +
+        '"questions" whose value is an array.\n' +
+        `Create exactly ${numberOfQuestions} multiple-choice questions.\n` +
+        'Each element has keys: "question" (string), "options" (array of 4 strings), ' +
+        '"correctAnswer" (0-based index of the correct option).\n' +
+        "Example:\n" +
+        '{"questions":[{"question":"What is 2+2?","options":["1","3","4","5"],"correctAnswer":2}]}',
+      `Topic: ${topic}`,
+      { temperature: 0.7, maxOutputTokens: 2500, wrapperKey: "questions" }
     );
 
     if (!Array.isArray(questions) || questions.length === 0) {
