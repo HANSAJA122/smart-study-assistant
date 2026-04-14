@@ -1,6 +1,6 @@
 # StudyAI - Smart Study Assistant
 
-A full-stack AI-powered study assistant built with **Next.js 15**, **TypeScript**, **Tailwind CSS**, **Prisma**, **PostgreSQL**, **NextAuth**, and **Google Gemini API**.
+A full-stack AI-powered study assistant built with **Next.js 15**, **TypeScript**, **Tailwind CSS**, **Prisma**, **PostgreSQL**, **NextAuth**, and **Ollama** (local AI).
 
 ## Features
 
@@ -24,7 +24,7 @@ A full-stack AI-powered study assistant built with **Next.js 15**, **TypeScript*
 | UI Components | shadcn/ui + Radix UI |
 | Database | PostgreSQL + Prisma ORM |
 | Auth | NextAuth v5 (Auth.js) |
-| AI | Google Gemini 3.1 Flash Lite Preview |
+| AI | Ollama (local) + Gemma 3 |
 | Charts | Recharts |
 | Validation | Zod |
 | Icons | Lucide React |
@@ -67,7 +67,7 @@ src/
 │   ├── auth.ts           # NextAuth configuration
 │   ├── auth-utils.ts     # Auth helper functions
 │   ├── db.ts             # Prisma client singleton
-│   ├── gemini.ts         # Google Gemini AI client
+│   ├── ollama.ts         # Ollama local AI client
 │   ├── utils.ts          # Utility functions
 │   └── validations.ts    # Zod schemas
 ├── types/
@@ -82,7 +82,53 @@ prisma/
 
 - **Node.js** 18+ installed
 - **PostgreSQL** database running locally or remotely
-- **Gemini API key** from [aistudio.google.com](https://aistudio.google.com/apikey)
+- **Ollama** installed locally (see setup below)
+
+## Ollama Setup
+
+### 1. Install Ollama
+
+**macOS:**
+
+```bash
+brew install ollama
+```
+
+Or download from [ollama.com/download](https://ollama.com/download).
+
+**Linux:**
+
+```bash
+curl -fsSL https://ollama.com/install.sh | sh
+```
+
+**Windows:**
+
+Download the installer from [ollama.com/download](https://ollama.com/download).
+
+### 2. Pull the model
+
+```bash
+ollama pull gemma3
+```
+
+This downloads the Gemma 3 model (~3.9 GB). It only needs to run once.
+
+### 3. Start the Ollama server
+
+```bash
+ollama serve
+```
+
+The server runs at `http://localhost:11434` by default. Keep this terminal open while using the app.
+
+### 4. Verify it works
+
+```bash
+curl http://localhost:11434/api/tags
+```
+
+You should see `gemma3` in the model list.
 
 ## Getting Started
 
@@ -107,7 +153,10 @@ Edit `.env` with your actual values:
 DATABASE_URL="postgresql://username:password@localhost:5432/study_assistant?schema=public"
 AUTH_SECRET="generate-with: openssl rand -base64 32"
 AUTH_URL="http://localhost:3000"
-GEMINI_API_KEY="your-gemini-api-key"
+
+# Ollama (defaults work out of the box — no API key needed)
+OLLAMA_BASE_URL="http://localhost:11434"
+OLLAMA_MODEL="gemma3"
 ```
 
 ### 3. Set up the database
@@ -125,7 +174,13 @@ npx prisma generate
 npx prisma db push
 ```
 
-### 4. Start the development server
+### 4. Start Ollama (in a separate terminal)
+
+```bash
+ollama serve
+```
+
+### 5. Start the development server
 
 ```bash
 npm run dev
@@ -133,11 +188,27 @@ npm run dev
 
 Open [http://localhost:3000](http://localhost:3000) to see the app.
 
-### 5. (Optional) View database with Prisma Studio
+### 6. (Optional) View database with Prisma Studio
 
 ```bash
 npx prisma studio
 ```
+
+## Using a Different Model
+
+You can swap the AI model by changing `OLLAMA_MODEL` in your `.env` file:
+
+```env
+OLLAMA_MODEL="llama3.2"
+```
+
+Then pull it:
+
+```bash
+ollama pull llama3.2
+```
+
+Any Ollama-compatible model works. Smaller models are faster; larger models give better answers.
 
 ## API Endpoints
 
@@ -175,12 +246,7 @@ npm run lint      # Run ESLint
 
 ## Deployment
 
-This app is ready for deployment on **Vercel**:
-
-1. Push to GitHub
-2. Connect to Vercel
-3. Set environment variables in Vercel dashboard
-4. Deploy
+For local deployment, just ensure Ollama is running on the same machine. For cloud deployment, you would need an Ollama instance accessible from the server, or switch back to a cloud AI provider.
 
 For the database, use a hosted PostgreSQL provider like **Neon**, **Supabase**, or **Railway**.
 

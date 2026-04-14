@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { generateJSON } from "@/lib/gemini";
+import { generateJSON } from "@/lib/ollama";
 import { flashcardGenerateSchema } from "@/lib/validations";
 
 interface GeneratedCard {
@@ -98,7 +98,7 @@ export async function POST(req: Request) {
     console.error("Flashcards POST error:", error);
     const message =
       error instanceof Error ? error.message : "Failed to generate flashcards.";
-    const status = message.includes("high demand") || message.includes("unavailable") ? 503 : 500;
+    const status = message.includes("Cannot connect") || message.includes("not available") ? 503 : 500;
     return NextResponse.json({ error: message }, { status });
   }
 }
