@@ -45,35 +45,21 @@ No local installation needed. Set three environment variables and you're done:
 ```env
 OLLAMA_BASE_URL="https://ollama.com"
 OLLAMA_API_KEY="your-ollama-cloud-api-key"
-OLLAMA_MODEL="llama3.1"
+OLLAMA_MODEL="gemma3:4b"
 ```
 
-The app automatically sends `Authorization: Bearer <OLLAMA_API_KEY>` on every request when using a cloud URL.
+The app sends `Authorization: Bearer <OLLAMA_API_KEY>` on every AI request automatically.
 
-### Option B: Ollama Local
+Available cloud models include `gemma3:4b`, `gemma3:12b`, `gemma3:27b`, `gemma4:31b`, `ministral-3:3b`, and more — run `curl -H "Authorization: Bearer <key>" https://ollama.com/api/tags` to see all options.
+
+### Option B: Ollama Local (Optional)
 
 Run AI entirely on your machine — no API key, no cloud, full privacy.
 
-**1. Install Ollama**
-
-```bash
-# macOS
-brew install ollama
-
-# Linux
-curl -fsSL https://ollama.com/install.sh | sh
-```
-
-Or download from [ollama.com](https://ollama.com).
-
-**2. Pull a model and start the server**
-
-```bash
-ollama pull gemma3
-ollama serve
-```
-
-**3. Configure `.env` for local mode**
+1. Install from [ollama.com](https://ollama.com)
+2. Pull a model: `ollama pull gemma3`
+3. Start the server: `ollama serve`
+4. Set in `.env`:
 
 ```env
 OLLAMA_BASE_URL="http://localhost:11434"
@@ -81,7 +67,7 @@ OLLAMA_API_KEY=""
 OLLAMA_MODEL="gemma3"
 ```
 
-> **Note:** AI features (chat, summarize, quiz, flashcards) require Ollama to be reachable. All other features (auth, planner, notes CRUD, progress) work without it.
+> **Note:** AI features (chat, summarize, quiz, flashcards) require a reachable Ollama server. All other features (auth, planner, notes CRUD, progress) work without it.
 
 ## Project Setup
 
@@ -111,15 +97,10 @@ DATABASE_URL="postgresql://username:password@localhost:5432/study_assistant?sche
 AUTH_SECRET="generate-with: openssl rand -base64 32"
 AUTH_URL="http://localhost:3000"
 
-# Ollama Cloud:
+# Ollama Cloud (see AI Setup section for local alternative):
 OLLAMA_BASE_URL="https://ollama.com"
 OLLAMA_API_KEY="your-ollama-cloud-api-key"
-OLLAMA_MODEL="llama3.1"
-
-# Or Ollama Local (no API key):
-# OLLAMA_BASE_URL="http://localhost:11434"
-# OLLAMA_API_KEY=""
-# OLLAMA_MODEL="gemma3"
+OLLAMA_MODEL="gemma3:4b"
 ```
 
 ### 4. Set up the database
@@ -138,7 +119,7 @@ npm run dev
 
 Open **[http://localhost:3000](http://localhost:3000)** to use the app.
 
-If using local Ollama, start it in a separate terminal first: `ollama serve`
+If using local Ollama, start it in a separate terminal first.
 
 ## Project Structure
 
@@ -198,10 +179,10 @@ src/
 Swap the AI model by changing `OLLAMA_MODEL` in `.env`:
 
 ```env
-OLLAMA_MODEL="llama3.2"
+OLLAMA_MODEL="gemma3:12b"
 ```
 
-For local mode, pull it first: `ollama pull llama3.2`
+For local mode, pull it first: `ollama pull gemma3:12b`
 
 ## Important Notes
 

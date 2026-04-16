@@ -1,19 +1,10 @@
 const OLLAMA_BASE_URL = process.env.OLLAMA_BASE_URL;
-const OLLAMA_MODEL = process.env.OLLAMA_MODEL || "llama3.1";
+const OLLAMA_MODEL = process.env.OLLAMA_MODEL || "gemma3:4b";
 const OLLAMA_API_KEY = process.env.OLLAMA_API_KEY || "";
 
 if (!OLLAMA_BASE_URL) {
   throw new Error(
-    "Missing OLLAMA_BASE_URL environment variable. " +
-      'Set it in .env (e.g. "https://ollama.com" for cloud or "http://localhost:11434" for local).'
-  );
-}
-
-const isCloud = OLLAMA_BASE_URL.startsWith("https://");
-
-if (isCloud && !OLLAMA_API_KEY) {
-  throw new Error(
-    "OLLAMA_API_KEY is required when using Ollama Cloud. Add it to your .env file."
+    "Missing OLLAMA_BASE_URL environment variable. Set it in your .env file."
   );
 }
 
@@ -45,9 +36,7 @@ function friendlyError(error: unknown): never {
     const cause = (error as NodeJS.ErrnoException).cause as NodeJS.ErrnoException;
     if (cause.code === "ECONNREFUSED") {
       throw new Error(
-        isCloud
-          ? `Cannot connect to Ollama Cloud at ${OLLAMA_BASE_URL}. Check your OLLAMA_BASE_URL and network connection.`
-          : `Cannot connect to Ollama at ${OLLAMA_BASE_URL}. Make sure it is running (start with: ollama serve).`
+        `Cannot connect to Ollama at ${OLLAMA_BASE_URL}. Check your OLLAMA_BASE_URL and make sure the server is reachable.`
       );
     }
   }
@@ -55,9 +44,7 @@ function friendlyError(error: unknown): never {
     const msg = error.message.toLowerCase();
     if (msg.includes("fetch") || msg.includes("econnrefused") || msg.includes("network")) {
       throw new Error(
-        isCloud
-          ? `Cannot reach Ollama Cloud at ${OLLAMA_BASE_URL}. Check your network and OLLAMA_BASE_URL.`
-          : `Cannot connect to Ollama at ${OLLAMA_BASE_URL}. Make sure it is running (start with: ollama serve).`
+        `Cannot reach Ollama at ${OLLAMA_BASE_URL}. Check your network connection and OLLAMA_BASE_URL.`
       );
     }
   }
@@ -80,32 +67,26 @@ function handleHttpError(status: number, body: string): never {
   }
   if (status === 429 || body.includes("rate limit") || body.includes("quota") || body.includes("too many")) {
     throw new Error(
-      "Rate limit or quota exceeded on Ollama Cloud. Please wait a moment and try again."
+      "Rate limit or quota exceeded. Please wait a moment and try again."
     );
   }
   if (status === 404 || body.includes("not found") || body.includes("model")) {
     throw new Error(
-      `The model "${OLLAMA_MODEL}" is not available. ` +
-        (isCloud
-          ? `Check that "${OLLAMA_MODEL}" is supported on your Ollama Cloud plan.`
-          : `Pull it first with: ollama pull ${OLLAMA_MODEL}`)
+      `The model "${OLLAMA_MODEL}" was not found. Check that the model name is correct and available on your Ollama server.`
     );
   }
   if (status === 502 || status === 503 || status === 504) {
     throw new Error(
-      "Ollama Cloud is temporarily unavailable. Please try again in a moment."
+      "The Ollama server is temporarily unavailable. Please try again in a moment."
     );
   }
   throw new Error(
-    `Ollama returned an error (HTTP ${status}). ` +
-      (isCloud
-        ? "Check your OLLAMA_BASE_URL and OLLAMA_API_KEY in .env."
-        : `Make sure Ollama is running and "${OLLAMA_MODEL}" is pulled.`)
+    `Ollama returned an error (HTTP ${status}). Check your OLLAMA_BASE_URL, OLLAMA_API_KEY, and OLLAMA_MODEL in .env.`
   );
 }
 
 /**
- * Core function that calls the Ollama /api/chat endpoint (non-streaming).
+ * Calls the Ollama /api/chat endpoint (non-streaming).
  * When jsonMode is true, Ollama constrains the output to valid JSON.
  */
 async function ollamaChat(
