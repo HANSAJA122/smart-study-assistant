@@ -96,6 +96,7 @@ Edit `.env`:
 DATABASE_URL="postgresql://username:password@localhost:5432/study_assistant?schema=public"
 AUTH_SECRET="generate-with: openssl rand -base64 32"
 AUTH_URL="http://localhost:3000"
+# Optional (production / Vercel): NEXT_PUBLIC_APP_URL="https://your-deployment.vercel.app"
 
 # Ollama Cloud (see AI Setup section for local alternative):
 OLLAMA_BASE_URL="https://ollama.com"
@@ -117,7 +118,9 @@ npx prisma db push
 npm run dev
 ```
 
-Open **[http://localhost:3000](http://localhost:3000)** to use the app.
+Open **http://localhost:3000** (or the URL shown in the terminal) to use the app locally.
+
+**Vercel:** Set `AUTH_URL` (and optionally `NEXT_PUBLIC_APP_URL`) to your live site URL — never use `http://localhost:3000` in Vercel environment variables. The app resolves the public URL from `AUTH_URL` → `NEXT_PUBLIC_APP_URL` → `VERCEL_URL` → localhost for dev.
 
 If using local Ollama, start it in a separate terminal first.
 

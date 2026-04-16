@@ -5,6 +5,16 @@ import bcrypt from "bcryptjs";
 import { db } from "@/lib/db";
 import { authConfig } from "./auth.config";
 
+// Mis-copied localhost AUTH_URL on Vercel makes next-auth rewrite every request to localhost (reqWithEnvURL).
+if (process.env.VERCEL) {
+  for (const key of ["AUTH_URL", "NEXTAUTH_URL"] as const) {
+    const v = process.env[key];
+    if (v && /localhost|127\.0\.0\.1/i.test(v)) {
+      delete process.env[key];
+    }
+  }
+}
+
 export const { handlers, auth, signIn, signOut } = NextAuth({
   ...authConfig,
   adapter: PrismaAdapter(db),

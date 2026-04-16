@@ -1,5 +1,6 @@
 import type { NextAuthConfig } from "next-auth";
 import Credentials from "next-auth/providers/credentials";
+import { getAppBaseUrl } from "./app-url";
 
 export const authConfig: NextAuthConfig = {
   session: { strategy: "jwt" },
@@ -20,6 +21,22 @@ export const authConfig: NextAuthConfig = {
     }),
   ],
   callbacks: {
+    async redirect({ url, baseUrl }) {
+      const origin = getAppBaseUrl();
+      if (url.startsWith("/")) return `${origin}${url}`;
+      try {
+        const target = new URL(url);
+        if (target.origin === new URL(origin).origin) return url;
+        try {
+          if (target.origin === new URL(baseUrl).origin) return url;
+        } catch {
+          /* ignore invalid baseUrl */
+        }
+      } catch {
+        /* ignore malformed url */
+      }
+      return origin;
+    },
     authorized({ auth, request: { nextUrl } }) {
       const isLoggedIn = !!auth?.user;
       const protectedPaths = [
