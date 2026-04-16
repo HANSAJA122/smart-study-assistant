@@ -1,6 +1,6 @@
 # Smart Study Assistant
 
-A full-stack, AI-powered study companion that helps students learn more effectively. Built with Next.js and powered by **Ollama local AI** — all AI features run entirely on your machine with no API keys, no cloud costs, and full privacy.
+A full-stack, AI-powered study companion that helps students learn more effectively. Built with Next.js and powered by **Ollama** — supports both **cloud** and **local** AI with no vendor lock-in.
 
 ## Features
 
@@ -30,17 +30,31 @@ A full-stack, AI-powered study companion that helps students learn more effectiv
 | UI | **shadcn/ui** + Radix UI |
 | Database | **PostgreSQL** + Prisma ORM |
 | Auth | **NextAuth v5** (Auth.js) |
-| AI | **Ollama** (local) — Gemma 3 model |
+| AI | **Ollama** (Cloud or Local) |
 | Charts | Recharts |
 | Validation | Zod |
 
-## AI Setup (Ollama Local)
+## AI Setup (Ollama)
 
-This project uses [Ollama](https://ollama.com) to run AI models locally. No API key is needed.
+This project uses [Ollama](https://ollama.com) for AI. You can run it in **cloud mode** or **local mode**.
 
-### 1. Install Ollama
+### Option A: Ollama Cloud (Recommended)
 
-Download and install from **[ollama.com](https://ollama.com)**, or use a package manager:
+No local installation needed. Set three environment variables and you're done:
+
+```env
+OLLAMA_BASE_URL="https://ollama.com"
+OLLAMA_API_KEY="your-ollama-cloud-api-key"
+OLLAMA_MODEL="llama3.1"
+```
+
+The app automatically sends `Authorization: Bearer <OLLAMA_API_KEY>` on every request when using a cloud URL.
+
+### Option B: Ollama Local
+
+Run AI entirely on your machine — no API key, no cloud, full privacy.
+
+**1. Install Ollama**
 
 ```bash
 # macOS
@@ -50,49 +64,24 @@ brew install ollama
 curl -fsSL https://ollama.com/install.sh | sh
 ```
 
-### 2. Pull the AI model
+Or download from [ollama.com](https://ollama.com).
+
+**2. Pull a model and start the server**
 
 ```bash
 ollama pull gemma3
-```
-
-This downloads Google's Gemma 3 model (~3.9 GB). Only needs to run once.
-
-### 3. Start the Ollama server
-
-```bash
 ollama serve
 ```
 
-Or, to start and interact with the model directly:
-
-```bash
-ollama run gemma3
-```
-
-Keep Ollama running in a separate terminal while using the app.
-
-### 4. Verify it's working
-
-```bash
-curl http://localhost:11434/api/tags
-```
-
-You should see `gemma3` listed in the response.
-
-> **Note:** Ollama must be running for AI features (chat, summarize, quiz, flashcards) to work. All other features (auth, planner, notes CRUD, progress) work without it.
-
-### Ollama Cloud (Optional)
-
-If you prefer not to run AI locally, you can use Ollama Cloud instead:
+**3. Configure `.env` for local mode**
 
 ```env
-OLLAMA_BASE_URL="https://api.ollama.com"
-OLLAMA_API_KEY="your-ollama-cloud-api-key"
+OLLAMA_BASE_URL="http://localhost:11434"
+OLLAMA_API_KEY=""
 OLLAMA_MODEL="gemma3"
 ```
 
-The app automatically detects local vs. cloud mode based on your `OLLAMA_BASE_URL` and attaches the `Authorization: Bearer` header when an API key is set.
+> **Note:** AI features (chat, summarize, quiz, flashcards) require Ollama to be reachable. All other features (auth, planner, notes CRUD, progress) work without it.
 
 ## Project Setup
 
@@ -115,21 +104,22 @@ npm install
 cp .env.example .env
 ```
 
-Edit `.env` with your values:
+Edit `.env`:
 
 ```env
 DATABASE_URL="postgresql://username:password@localhost:5432/study_assistant?schema=public"
 AUTH_SECRET="generate-with: openssl rand -base64 32"
 AUTH_URL="http://localhost:3000"
 
-# Ollama — local mode (no API key needed)
-OLLAMA_BASE_URL="http://localhost:11434"
-OLLAMA_MODEL="gemma3"
-OLLAMA_API_KEY=""
+# Ollama Cloud:
+OLLAMA_BASE_URL="https://ollama.com"
+OLLAMA_API_KEY="your-ollama-cloud-api-key"
+OLLAMA_MODEL="llama3.1"
 
-# Or use Ollama Cloud:
-# OLLAMA_BASE_URL="https://api.ollama.com"
-# OLLAMA_API_KEY="your-ollama-cloud-api-key"
+# Or Ollama Local (no API key):
+# OLLAMA_BASE_URL="http://localhost:11434"
+# OLLAMA_API_KEY=""
+# OLLAMA_MODEL="gemma3"
 ```
 
 ### 4. Set up the database
@@ -143,14 +133,12 @@ npx prisma db push
 ### 5. Start the app
 
 ```bash
-# Terminal 1 — Ollama
-ollama serve
-
-# Terminal 2 — Next.js
 npm run dev
 ```
 
 Open **[http://localhost:3000](http://localhost:3000)** to use the app.
+
+If using local Ollama, start it in a separate terminal first: `ollama serve`
 
 ## Project Structure
 
@@ -184,7 +172,7 @@ src/
 ├── lib/
 │   ├── auth.ts              # NextAuth configuration
 │   ├── db.ts                # Prisma client singleton
-│   ├── ollama.ts            # Ollama AI client
+│   ├── ollama.ts            # Ollama AI client (cloud + local)
 │   ├── utils.ts             # Utility functions
 │   └── validations.ts       # Zod schemas
 └── types/
@@ -213,13 +201,14 @@ Swap the AI model by changing `OLLAMA_MODEL` in `.env`:
 OLLAMA_MODEL="llama3.2"
 ```
 
-Then pull it: `ollama pull llama3.2`. Any Ollama-compatible model works.
+For local mode, pull it first: `ollama pull llama3.2`
 
 ## Important Notes
 
-- **Local mode:** Ollama must be running on your machine. No API key needed — everything is private and free.
-- **Cloud mode:** Set `OLLAMA_BASE_URL` to your cloud endpoint and provide `OLLAMA_API_KEY`. Works for deployment and remote setups.
-- **Without Ollama,** chat, summarize, quiz, and flashcard generation will show a connection error — all other features continue to work normally.
+- `OLLAMA_BASE_URL` is **required** — the app will not start without it.
+- **Cloud mode** (`https://` URL): `OLLAMA_API_KEY` is required. The app sends `Authorization: Bearer` on every AI request.
+- **Local mode** (`http://` URL): No API key needed. Ollama must be running on your machine.
+- Without a reachable Ollama server, AI features show a friendly error — all other features work normally.
 
 ## Scripts
 

@@ -1,8 +1,21 @@
-const OLLAMA_BASE_URL = process.env.OLLAMA_BASE_URL || "http://localhost:11434";
-const OLLAMA_MODEL = process.env.OLLAMA_MODEL || "gemma3";
+const OLLAMA_BASE_URL = process.env.OLLAMA_BASE_URL;
+const OLLAMA_MODEL = process.env.OLLAMA_MODEL || "llama3.1";
 const OLLAMA_API_KEY = process.env.OLLAMA_API_KEY || "";
 
+if (!OLLAMA_BASE_URL) {
+  throw new Error(
+    "Missing OLLAMA_BASE_URL environment variable. " +
+      'Set it in .env (e.g. "https://ollama.com" for cloud or "http://localhost:11434" for local).'
+  );
+}
+
 const isCloud = OLLAMA_BASE_URL.startsWith("https://");
+
+if (isCloud && !OLLAMA_API_KEY) {
+  throw new Error(
+    "OLLAMA_API_KEY is required when using Ollama Cloud. Add it to your .env file."
+  );
+}
 
 interface OllamaChatMessage {
   role: "system" | "user" | "assistant";
@@ -33,8 +46,8 @@ function friendlyError(error: unknown): never {
     if (cause.code === "ECONNREFUSED") {
       throw new Error(
         isCloud
-          ? `Cannot connect to Ollama Cloud at ${OLLAMA_BASE_URL}. Check your OLLAMA_BASE_URL.`
-          : "Cannot connect to Ollama. Make sure it is running (start with: ollama serve)."
+          ? `Cannot connect to Ollama Cloud at ${OLLAMA_BASE_URL}. Check your OLLAMA_BASE_URL and network connection.`
+          : `Cannot connect to Ollama at ${OLLAMA_BASE_URL}. Make sure it is running (start with: ollama serve).`
       );
     }
   }
@@ -44,7 +57,7 @@ function friendlyError(error: unknown): never {
       throw new Error(
         isCloud
           ? `Cannot reach Ollama Cloud at ${OLLAMA_BASE_URL}. Check your network and OLLAMA_BASE_URL.`
-          : "Cannot connect to Ollama. Make sure it is running (start with: ollama serve)."
+          : `Cannot connect to Ollama at ${OLLAMA_BASE_URL}. Make sure it is running (start with: ollama serve).`
       );
     }
   }
@@ -55,9 +68,9 @@ function friendlyError(error: unknown): never {
  * Handles non-OK HTTP responses with user-friendly messages.
  */
 function handleHttpError(status: number, body: string): never {
-  if (status === 401 || body.includes("unauthorized") || body.includes("invalid key")) {
+  if (status === 401 || body.includes("unauthorized") || body.includes("invalid key") || body.includes("invalid api key")) {
     throw new Error(
-      "Authentication failed. Check your OLLAMA_API_KEY in .env — it may be missing or invalid."
+      "Authentication failed. Your OLLAMA_API_KEY is missing or invalid. Check your .env file."
     );
   }
   if (status === 403) {
@@ -65,23 +78,28 @@ function handleHttpError(status: number, body: string): never {
       "Access denied. Your Ollama API key does not have permission for this request."
     );
   }
-  if (status === 429 || body.includes("rate limit") || body.includes("quota")) {
+  if (status === 429 || body.includes("rate limit") || body.includes("quota") || body.includes("too many")) {
     throw new Error(
-      "Rate limit or quota exceeded. Please wait a moment and try again, or upgrade your Ollama plan."
+      "Rate limit or quota exceeded on Ollama Cloud. Please wait a moment and try again."
     );
   }
-  if (status === 404 || body.includes("not found")) {
+  if (status === 404 || body.includes("not found") || body.includes("model")) {
     throw new Error(
       `The model "${OLLAMA_MODEL}" is not available. ` +
         (isCloud
-          ? "Check that the model name is correct for your Ollama Cloud account."
+          ? `Check that "${OLLAMA_MODEL}" is supported on your Ollama Cloud plan.`
           : `Pull it first with: ollama pull ${OLLAMA_MODEL}`)
+    );
+  }
+  if (status === 502 || status === 503 || status === 504) {
+    throw new Error(
+      "Ollama Cloud is temporarily unavailable. Please try again in a moment."
     );
   }
   throw new Error(
     `Ollama returned an error (HTTP ${status}). ` +
       (isCloud
-        ? "Check your OLLAMA_BASE_URL and OLLAMA_API_KEY."
+        ? "Check your OLLAMA_BASE_URL and OLLAMA_API_KEY in .env."
         : `Make sure Ollama is running and "${OLLAMA_MODEL}" is pulled.`)
   );
 }
