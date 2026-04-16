@@ -1,5 +1,8 @@
 const OLLAMA_BASE_URL = process.env.OLLAMA_BASE_URL || "http://localhost:11434";
 const OLLAMA_MODEL = process.env.OLLAMA_MODEL || "gemma3";
+const OLLAMA_API_KEY = process.env.OLLAMA_API_KEY || "";
+
+const isCloud = OLLAMA_BASE_URL.startsWith("https://");
 
 interface OllamaChatMessage {
   role: "system" | "user" | "assistant";
@@ -11,6 +14,16 @@ interface OllamaChatResponse {
   done: boolean;
 }
 
+function buildHeaders(): Record<string, string> {
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+  };
+  if (OLLAMA_API_KEY) {
+    headers["Authorization"] = `Bearer ${OLLAMA_API_KEY}`;
+  }
+  return headers;
+}
+
 /**
  * Translates raw fetch errors into friendly, actionable messages.
  */
@@ -19,8 +32,9 @@ function friendlyError(error: unknown): never {
     const cause = (error as NodeJS.ErrnoException).cause as NodeJS.ErrnoException;
     if (cause.code === "ECONNREFUSED") {
       throw new Error(
-        "Cannot connect to Ollama. Make sure Ollama is installed and running " +
-          `(start it with: ollama serve). Expected at ${OLLAMA_BASE_URL}`
+        isCloud
+          ? `Cannot connect to Ollama Cloud at ${OLLAMA_BASE_URL}. Check your OLLAMA_BASE_URL.`
+          : "Cannot connect to Ollama. Make sure it is running (start with: ollama serve)."
       );
     }
   }
@@ -28,12 +42,48 @@ function friendlyError(error: unknown): never {
     const msg = error.message.toLowerCase();
     if (msg.includes("fetch") || msg.includes("econnrefused") || msg.includes("network")) {
       throw new Error(
-        "Cannot connect to Ollama. Make sure Ollama is installed and running " +
-          "(start it with: ollama serve)."
+        isCloud
+          ? `Cannot reach Ollama Cloud at ${OLLAMA_BASE_URL}. Check your network and OLLAMA_BASE_URL.`
+          : "Cannot connect to Ollama. Make sure it is running (start with: ollama serve)."
       );
     }
   }
   throw error;
+}
+
+/**
+ * Handles non-OK HTTP responses with user-friendly messages.
+ */
+function handleHttpError(status: number, body: string): never {
+  if (status === 401 || body.includes("unauthorized") || body.includes("invalid key")) {
+    throw new Error(
+      "Authentication failed. Check your OLLAMA_API_KEY in .env — it may be missing or invalid."
+    );
+  }
+  if (status === 403) {
+    throw new Error(
+      "Access denied. Your Ollama API key does not have permission for this request."
+    );
+  }
+  if (status === 429 || body.includes("rate limit") || body.includes("quota")) {
+    throw new Error(
+      "Rate limit or quota exceeded. Please wait a moment and try again, or upgrade your Ollama plan."
+    );
+  }
+  if (status === 404 || body.includes("not found")) {
+    throw new Error(
+      `The model "${OLLAMA_MODEL}" is not available. ` +
+        (isCloud
+          ? "Check that the model name is correct for your Ollama Cloud account."
+          : `Pull it first with: ollama pull ${OLLAMA_MODEL}`)
+    );
+  }
+  throw new Error(
+    `Ollama returned an error (HTTP ${status}). ` +
+      (isCloud
+        ? "Check your OLLAMA_BASE_URL and OLLAMA_API_KEY."
+        : `Make sure Ollama is running and "${OLLAMA_MODEL}" is pulled.`)
+  );
 }
 
 /**
@@ -50,7 +100,7 @@ async function ollamaChat(
   try {
     res = await fetch(`${OLLAMA_BASE_URL}/api/chat`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: buildHeaders(),
       body: JSON.stringify({
         model: OLLAMA_MODEL,
         messages,
@@ -65,15 +115,7 @@ async function ollamaChat(
 
   if (!res.ok) {
     const body = await res.text().catch(() => "");
-
-    if (res.status === 404 || body.includes("not found")) {
-      throw new Error(
-        `The model "${OLLAMA_MODEL}" is not available. Pull it first with: ollama pull ${OLLAMA_MODEL}`
-      );
-    }
-    throw new Error(
-      `Ollama returned an error (HTTP ${res.status}). Make sure Ollama is running and the model "${OLLAMA_MODEL}" is pulled.`
-    );
+    handleHttpError(res.status, body.toLowerCase());
   }
 
   const data = (await res.json()) as OllamaChatResponse;
@@ -129,13 +171,11 @@ export async function generateJSON<T = unknown>(
   try {
     const parsed = JSON.parse(cleaned);
 
-    // If a wrapperKey is specified, unwrap: { key: [...] } → [...]
     if (opts?.wrapperKey && typeof parsed === "object" && !Array.isArray(parsed)) {
       const inner = parsed[opts.wrapperKey];
       if (Array.isArray(inner)) {
         return inner as T;
       }
-      // Try the first array-valued property as fallback
       for (const val of Object.values(parsed)) {
         if (Array.isArray(val)) return val as T;
       }

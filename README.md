@@ -80,7 +80,19 @@ curl http://localhost:11434/api/tags
 
 You should see `gemma3` listed in the response.
 
-> **Note:** Ollama must be running at `http://localhost:11434` for AI features (chat, summarize, quiz, flashcards) to work. All other features (auth, planner, notes CRUD, progress) work without it.
+> **Note:** Ollama must be running for AI features (chat, summarize, quiz, flashcards) to work. All other features (auth, planner, notes CRUD, progress) work without it.
+
+### Ollama Cloud (Optional)
+
+If you prefer not to run AI locally, you can use Ollama Cloud instead:
+
+```env
+OLLAMA_BASE_URL="https://api.ollama.com"
+OLLAMA_API_KEY="your-ollama-cloud-api-key"
+OLLAMA_MODEL="gemma3"
+```
+
+The app automatically detects local vs. cloud mode based on your `OLLAMA_BASE_URL` and attaches the `Authorization: Bearer` header when an API key is set.
 
 ## Project Setup
 
@@ -110,9 +122,14 @@ DATABASE_URL="postgresql://username:password@localhost:5432/study_assistant?sche
 AUTH_SECRET="generate-with: openssl rand -base64 32"
 AUTH_URL="http://localhost:3000"
 
-# Ollama — no API key needed, these defaults work out of the box
+# Ollama — local mode (no API key needed)
 OLLAMA_BASE_URL="http://localhost:11434"
 OLLAMA_MODEL="gemma3"
+OLLAMA_API_KEY=""
+
+# Or use Ollama Cloud:
+# OLLAMA_BASE_URL="https://api.ollama.com"
+# OLLAMA_API_KEY="your-ollama-cloud-api-key"
 ```
 
 ### 4. Set up the database
@@ -200,9 +217,9 @@ Then pull it: `ollama pull llama3.2`. Any Ollama-compatible model works.
 
 ## Important Notes
 
-- **AI features require Ollama running locally.** Without it, chat, summarize, quiz, and flashcard generation will show a connection error — all other features continue to work normally.
-- **No API key is required.** Everything runs on your machine.
-- **For cloud deployment,** you would need an Ollama instance accessible from the server, or swap to a cloud AI provider (OpenAI, Gemini, etc.) by replacing `src/lib/ollama.ts`.
+- **Local mode:** Ollama must be running on your machine. No API key needed — everything is private and free.
+- **Cloud mode:** Set `OLLAMA_BASE_URL` to your cloud endpoint and provide `OLLAMA_API_KEY`. Works for deployment and remote setups.
+- **Without Ollama,** chat, summarize, quiz, and flashcard generation will show a connection error — all other features continue to work normally.
 
 ## Scripts
 
