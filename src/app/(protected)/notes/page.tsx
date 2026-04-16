@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useState, useCallback } from "react";
 import {
   Plus,
   FileText,
@@ -8,9 +8,7 @@ import {
   Trash2,
   Loader2,
   AlertCircle,
-  Upload,
   File,
-  X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -33,18 +31,9 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { EmptyState } from "@/components/shared/empty-state";
 import { LoadingPage } from "@/components/shared/loading";
 import { formatDate } from "@/lib/utils";
-
-const ACCEPTED_TYPES = [
-  "application/pdf",
-  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-  "text/plain",
-];
-const ACCEPTED_EXTENSIONS = ".pdf,.docx,.txt";
-const MAX_FILE_SIZE = 10 * 1024 * 1024;
 
 interface Note {
   id: string;
@@ -67,14 +56,6 @@ export default function NotesPage() {
   const [selectedNote, setSelectedNote] = useState<Note | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  // Upload state
-  const [uploadFile, setUploadFile] = useState<File | null>(null);
-  const [uploadTitle, setUploadTitle] = useState("");
-  const [uploading, setUploading] = useState(false);
-  const [autoSummarize, setAutoSummarize] = useState(true);
-  const [dragOver, setDragOver] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
   const fetchNotes = useCallback(async () => {
     try {
       const res = await fetch("/api/notes");
@@ -93,38 +74,6 @@ export default function NotesPage() {
     fetchNotes();
   }, [fetchNotes]);
 
-  function resetDialog() {
-    setTitle("");
-    setContent("");
-    setUploadFile(null);
-    setUploadTitle("");
-    setAutoSummarize(true);
-    setError(null);
-  }
-
-  function validateFile(file: File): string | null {
-    if (!ACCEPTED_TYPES.includes(file.type)) {
-      return "Unsupported file type. Please upload a PDF, DOCX, or TXT file.";
-    }
-    if (file.size > MAX_FILE_SIZE) {
-      return "File is too large. Maximum size is 10 MB.";
-    }
-    return null;
-  }
-
-  function handleFileSelect(file: File) {
-    const err = validateFile(file);
-    if (err) {
-      setError(err);
-      return;
-    }
-    setUploadFile(file);
-    if (!uploadTitle) {
-      setUploadTitle(file.name.replace(/\.[^.]+$/, ""));
-    }
-    setError(null);
-  }
-
   async function handleSave() {
     if (!title || !content) return;
     setSaving(true);
@@ -139,43 +88,14 @@ export default function NotesPage() {
         const data = await res.json();
         throw new Error(data.error || "Failed to save note.");
       }
-      resetDialog();
+      setTitle("");
+      setContent("");
       setDialogOpen(false);
       fetchNotes();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to save note.");
     } finally {
       setSaving(false);
-    }
-  }
-
-  async function handleUpload() {
-    if (!uploadFile) return;
-    setUploading(true);
-    setError(null);
-    try {
-      const formData = new FormData();
-      formData.append("file", uploadFile);
-      if (uploadTitle) formData.append("title", uploadTitle);
-      formData.append("autoSummarize", autoSummarize ? "true" : "false");
-
-      const res = await fetch("/api/notes/upload", {
-        method: "POST",
-        body: formData,
-      });
-
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error || "Failed to process file.");
-      }
-
-      resetDialog();
-      setDialogOpen(false);
-      fetchNotes();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to upload file.");
-    } finally {
-      setUploading(false);
     }
   }
 
@@ -228,16 +148,10 @@ export default function NotesPage() {
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Notes</h1>
           <p className="text-muted-foreground mt-1">
-            Create notes or upload lecture files and let AI summarize them.
+            Create and summarize your study notes with AI.
           </p>
         </div>
-        <Dialog
-          open={dialogOpen}
-          onOpenChange={(open) => {
-            setDialogOpen(open);
-            if (!open) resetDialog();
-          }}
-        >
+        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
           <DialogTrigger asChild>
             <Button>
               <Plus className="mr-2 h-4 w-4" /> New Note
@@ -247,189 +161,45 @@ export default function NotesPage() {
             <DialogHeader>
               <DialogTitle>Create Note</DialogTitle>
               <DialogDescription>
-                Type your notes manually or upload a lecture file (PDF, DOCX,
-                TXT).
+                Add your study notes. You can summarize them with AI later.
               </DialogDescription>
             </DialogHeader>
-
-            <Tabs defaultValue="type" className="w-full">
-              <TabsList className="grid w-full grid-cols-2">
-                <TabsTrigger value="type">
-                  <FileText className="mr-2 h-4 w-4" />
-                  Type Notes
-                </TabsTrigger>
-                <TabsTrigger value="upload">
-                  <Upload className="mr-2 h-4 w-4" />
-                  Upload File
-                </TabsTrigger>
-              </TabsList>
-
-              {/* ── Type Notes Tab ── */}
-              <TabsContent value="type" className="space-y-4 mt-4">
-                <div>
-                  <Label htmlFor="note-title">Title</Label>
-                  <Input
-                    id="note-title"
-                    value={title}
-                    onChange={(e) => setTitle(e.target.value)}
-                    placeholder="e.g., Chapter 5 - Photosynthesis"
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="note-content">Content</Label>
-                  <Textarea
-                    id="note-content"
-                    value={content}
-                    onChange={(e) => setContent(e.target.value)}
-                    placeholder="Paste or type your notes here..."
-                    className="min-h-[200px]"
-                  />
-                </div>
-                <DialogFooter>
-                  <Button
-                    onClick={handleSave}
-                    disabled={saving || !title || !content}
-                  >
-                    {saving && (
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    )}
-                    Save Note
-                  </Button>
-                </DialogFooter>
-              </TabsContent>
-
-              {/* ── Upload File Tab ── */}
-              <TabsContent value="upload" className="space-y-4 mt-4">
-                <div>
-                  <Label htmlFor="upload-title">Title (optional)</Label>
-                  <Input
-                    id="upload-title"
-                    value={uploadTitle}
-                    onChange={(e) => setUploadTitle(e.target.value)}
-                    placeholder="Auto-detected from file name"
-                  />
-                </div>
-
-                {/* Drop Zone */}
-                <div
-                  className={`relative flex flex-col items-center justify-center rounded-lg border-2 border-dashed p-8 transition-colors ${
-                    dragOver
-                      ? "border-primary bg-primary/5"
-                      : "border-muted-foreground/25 hover:border-muted-foreground/50"
-                  }`}
-                  onDragOver={(e) => {
-                    e.preventDefault();
-                    setDragOver(true);
-                  }}
-                  onDragLeave={() => setDragOver(false)}
-                  onDrop={(e) => {
-                    e.preventDefault();
-                    setDragOver(false);
-                    const file = e.dataTransfer.files[0];
-                    if (file) handleFileSelect(file);
-                  }}
-                  onClick={() => fileInputRef.current?.click()}
-                >
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept={ACCEPTED_EXTENSIONS}
-                    className="hidden"
-                    onChange={(e) => {
-                      const file = e.target.files?.[0];
-                      if (file) handleFileSelect(file);
-                      e.target.value = "";
-                    }}
-                  />
-
-                  {uploadFile ? (
-                    <div className="flex items-center gap-3">
-                      <File className="h-8 w-8 text-primary" />
-                      <div className="text-left">
-                        <p className="text-sm font-medium">
-                          {uploadFile.name}
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          {(uploadFile.size / 1024).toFixed(1)} KB
-                        </p>
-                      </div>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-7 w-7"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setUploadFile(null);
-                        }}
-                      >
-                        <X className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  ) : (
-                    <>
-                      <Upload className="h-10 w-10 text-muted-foreground/50 mb-3" />
-                      <p className="text-sm font-medium">
-                        Drop your file here or click to browse
-                      </p>
-                      <p className="text-xs text-muted-foreground mt-1">
-                        PDF, DOCX, or TXT — up to 10 MB
-                      </p>
-                    </>
-                  )}
-                </div>
-
-                {/* Auto-summarize toggle */}
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={autoSummarize}
-                    onChange={(e) => setAutoSummarize(e.target.checked)}
-                    className="rounded border-muted-foreground/25"
-                  />
-                  <span className="text-sm">
-                    <Sparkles className="inline h-3.5 w-3.5 mr-1 text-primary" />
-                    Auto-summarize with AI after upload
-                  </span>
-                </label>
-
-                {/* Error inside dialog */}
-                {error && (
-                  <div className="flex items-center gap-2 rounded-lg border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive">
-                    <AlertCircle className="h-4 w-4 shrink-0" />
-                    <span>{error}</span>
-                  </div>
-                )}
-
-                <DialogFooter>
-                  <Button
-                    onClick={handleUpload}
-                    disabled={uploading || !uploadFile}
-                  >
-                    {uploading ? (
-                      <>
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        {autoSummarize
-                          ? "Extracting & Summarizing..."
-                          : "Extracting Text..."}
-                      </>
-                    ) : (
-                      <>
-                        <Upload className="mr-2 h-4 w-4" />
-                        {autoSummarize
-                          ? "Upload & Summarize"
-                          : "Upload & Save"}
-                      </>
-                    )}
-                  </Button>
-                </DialogFooter>
-              </TabsContent>
-            </Tabs>
+            <div className="space-y-4">
+              <div>
+                <Label htmlFor="note-title">Title</Label>
+                <Input
+                  id="note-title"
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  placeholder="e.g., Chapter 5 - Photosynthesis"
+                />
+              </div>
+              <div>
+                <Label htmlFor="note-content">Content</Label>
+                <Textarea
+                  id="note-content"
+                  value={content}
+                  onChange={(e) => setContent(e.target.value)}
+                  placeholder="Paste or type your notes here..."
+                  className="min-h-[200px]"
+                />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button
+                onClick={handleSave}
+                disabled={saving || !title || !content}
+              >
+                {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                Save Note
+              </Button>
+            </DialogFooter>
           </DialogContent>
         </Dialog>
       </div>
 
       {/* Error banner */}
-      {error && !dialogOpen && (
+      {error && (
         <div className="flex items-center gap-2 rounded-lg border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive">
           <AlertCircle className="h-4 w-4 shrink-0" />
           <span>{error}</span>
@@ -446,7 +216,7 @@ export default function NotesPage() {
         <EmptyState
           icon={FileText}
           title="No notes yet"
-          description="Create your first note or upload a lecture file and let AI summarize it."
+          description="Create your first note and use AI to generate a concise summary."
           actionLabel="Create Note"
           onAction={() => setDialogOpen(true)}
         />
