@@ -84,6 +84,7 @@ model Note {
   title     String
   content   String
   summary   String?
+  fileName  String?
   subjectId String?
   userId    String
   createdAt DateTime @default(now())
