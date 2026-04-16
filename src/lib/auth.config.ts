@@ -55,7 +55,11 @@ export const authConfig: NextAuthConfig = {
       }
       return session;
     },
-    async jwt({ token }) {
+    async jwt({ token, user }) {
+      // Credentials sign-in: persist user id on the token so session.user.id works in API routes (e.g. production).
+      if (user?.id) {
+        token.sub = user.id;
+      }
       return token;
     },
   },

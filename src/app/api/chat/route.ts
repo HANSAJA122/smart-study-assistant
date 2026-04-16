@@ -11,15 +11,31 @@ const SYSTEM_INSTRUCTIONS =
   "concise, and student-friendly. Use examples and analogies when they help. " +
   "If a student asks something outside of studying, gently redirect them.";
 
+function unauthorized() {
+  return NextResponse.json({ error: "User not authenticated" }, { status: 401 });
+}
+
+/** Resolves a non-null user id from the session, or null if unauthenticated / invalid. */
+async function requireChatUserId(): Promise<string | null> {
+  const session = await auth();
+  if (!session?.user) return null;
+  const userId = session.user.id;
+  if (!userId || typeof userId !== "string") return null;
+
+  const user = await db.user.findUnique({
+    where: { id: userId },
+    select: { id: true },
+  });
+  return user?.id ?? null;
+}
+
 export async function GET() {
   try {
-    const session = await auth();
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const userId = await requireChatUserId();
+    if (!userId) return unauthorized();
 
     const messages = await db.chatMessage.findMany({
-      where: { userId: session.user.id },
+      where: { userId },
       orderBy: { createdAt: "asc" },
       take: 50,
     });
@@ -36,10 +52,8 @@ export async function GET() {
 
 export async function POST(req: Request) {
   try {
-    const session = await auth();
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const userId = await requireChatUserId();
+    if (!userId) return unauthorized();
 
     const body = await req.json();
     const parsed = chatSchema.safeParse(body);
@@ -52,7 +66,7 @@ export async function POST(req: Request) {
 
     // Fetch recent conversation for context (last 10 messages)
     const history = await db.chatMessage.findMany({
-      where: { userId: session.user.id },
+      where: { userId },
       orderBy: { createdAt: "desc" },
       take: 10,
     });
@@ -81,14 +95,14 @@ export async function POST(req: Request) {
         data: {
           role: "user",
           content: parsed.data.message,
-          userId: session.user.id,
+          userId,
         },
       }),
       db.chatMessage.create({
         data: {
           role: "assistant",
           content: reply,
-          userId: session.user.id,
+          userId,
         },
       }),
     ]);
@@ -105,13 +119,11 @@ export async function POST(req: Request) {
 
 export async function DELETE() {
   try {
-    const session = await auth();
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const userId = await requireChatUserId();
+    if (!userId) return unauthorized();
 
     await db.chatMessage.deleteMany({
-      where: { userId: session.user.id },
+      where: { userId },
     });
 
     return NextResponse.json({ message: "Chat history cleared." });
