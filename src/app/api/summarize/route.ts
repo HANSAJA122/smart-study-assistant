@@ -1,26 +1,46 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { generateText } from "@/lib/ollama";
+import { summarizeRequestSchema } from "@/lib/validations";
+import {
+  assertTrustedOrigin,
+  handleApiError,
+  parseJsonBody,
+  requireAiRateLimit,
+  requireAuth,
+} from "@/lib/api-security";
+import { SUMMARIZE_STUDY_ASSISTANT_SYSTEM_PROMPT } from "@/lib/study-ai-scope";
 
 export async function POST(req: Request) {
   try {
-    const session = await auth();
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const forbidden = assertTrustedOrigin(req);
+    if (forbidden) return forbidden;
 
-    const body = await req.json();
-    const noteId = body?.noteId;
-    if (!noteId || typeof noteId !== "string") {
+    const authResult = await requireAuth();
+    if (authResult instanceof NextResponse) {
+      console.warn("[api] summarize POST: unauthenticated");
+      return authResult;
+    }
+    const userId = authResult;
+
+    const limited = requireAiRateLimit(userId);
+    if (limited !== true) return limited;
+
+    const raw = await parseJsonBody(req);
+    if (raw instanceof NextResponse) return raw;
+
+    const parsed = summarizeRequestSchema.safeParse(raw);
+    if (!parsed.success) {
       return NextResponse.json(
-        { error: "A valid noteId is required." },
+        { error: parsed.error.issues[0]?.message ?? "Invalid input" },
         { status: 400 }
       );
     }
 
-    const note = await db.note.findUnique({
-      where: { id: noteId, userId: session.user.id },
+    const { noteId } = parsed.data;
+
+    const note = await db.note.findFirst({
+      where: { id: noteId, userId },
     });
 
     if (!note) {
@@ -28,10 +48,8 @@ export async function POST(req: Request) {
     }
 
     const summary = await generateText(
-      "You are a study assistant. Summarize the following student notes into " +
-        "concise, well-organized bullet points that capture every key concept. " +
-        "Keep language clear and student-friendly.",
-      `Please summarize these notes:\n\n${note.content}`,
+      SUMMARIZE_STUDY_ASSISTANT_SYSTEM_PROMPT,
+      `Summarize the following student notes into concise, well-organized bullet points that capture every key concept. Use clear, student-friendly language.\n\n---\n${note.content}\n---`,
       { temperature: 0.4, maxOutputTokens: 600 }
     );
 
@@ -43,17 +61,15 @@ export async function POST(req: Request) {
     }
 
     const updated = await db.note.update({
-      where: { id: noteId },
+      where: { id: noteId, userId },
       data: { summary },
       include: { subject: { select: { name: true, color: true } } },
     });
 
     return NextResponse.json(updated);
   } catch (error) {
-    console.error("Summarize error:", error);
-    const message =
-      error instanceof Error ? error.message : "Failed to summarize note.";
-    const status = message.includes("Cannot connect") || message.includes("not available") ? 503 : 500;
-    return NextResponse.json({ error: message }, { status });
+    return handleApiError(error, "summarize POST", {
+      fallbackMessage: "Failed to summarize note.",
+    });
   }
 }

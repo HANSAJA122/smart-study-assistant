@@ -1,16 +1,13 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { format, subDays } from "date-fns";
+import { handleApiError, requireAuth } from "@/lib/api-security";
 
 export async function GET() {
   try {
-    const session = await auth();
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    const userId = session.user.id;
+    const authResult = await requireAuth();
+    if (authResult instanceof NextResponse) return authResult;
+    const userId = authResult;
 
     const [
       totalNotes,
@@ -29,7 +26,6 @@ export async function GET() {
       }),
     ]);
 
-    // Calculate average quiz score
     const quizProgress = progressRecords.filter((p) => p.type === "quiz");
     const averageScore =
       quizProgress.length > 0
@@ -38,7 +34,6 @@ export async function GET() {
           )
         : 0;
 
-    // Weekly activity (last 7 days)
     const weeklyActivity = [];
     for (let i = 6; i >= 0; i--) {
       const date = subDays(new Date(), i);
@@ -74,13 +69,11 @@ export async function GET() {
       });
     }
 
-    // Quiz scores over time
     const quizScores = quizProgress.slice(0, 10).reverse().map((p) => ({
       date: format(new Date(p.date), "MMM d"),
       score: p.score,
     }));
 
-    // Subject distribution
     const subjects = await db.subject.findMany({
       where: { userId },
       include: {
@@ -109,7 +102,8 @@ export async function GET() {
       subjectDistribution,
     });
   } catch (error) {
-    console.error("Progress GET error:", error);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+    return handleApiError(error, "progress GET", {
+      fallbackMessage: "Failed to load progress.",
+    });
   }
 }

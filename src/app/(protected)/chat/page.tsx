@@ -123,7 +123,7 @@ export default function ChatPage() {
         <div>
           <h1 className="text-3xl font-bold tracking-tight">AI Tutor</h1>
           <p className="text-muted-foreground mt-1">
-            Ask anything — your personal AI study companion.
+            Ask study and course questions — focused help for your learning.
           </p>
         </div>
         {messages.length > 0 && (

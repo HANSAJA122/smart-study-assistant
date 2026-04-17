@@ -1,39 +1,48 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { subjectSchema } from "@/lib/validations";
+import {
+  assertTrustedOrigin,
+  handleApiError,
+  parseJsonBody,
+  requireAuth,
+} from "@/lib/api-security";
 
 export async function GET() {
   try {
-    const session = await auth();
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const authResult = await requireAuth();
+    if (authResult instanceof NextResponse) return authResult;
+    const userId = authResult;
 
     const subjects = await db.subject.findMany({
-      where: { userId: session.user.id },
+      where: { userId },
       orderBy: { name: "asc" },
     });
 
     return NextResponse.json(subjects);
   } catch (error) {
-    console.error("Subjects GET error:", error);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+    return handleApiError(error, "subjects GET", {
+      fallbackMessage: "Failed to load subjects.",
+    });
   }
 }
 
 export async function POST(req: Request) {
   try {
-    const session = await auth();
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const forbidden = assertTrustedOrigin(req);
+    if (forbidden) return forbidden;
 
-    const body = await req.json();
-    const parsed = subjectSchema.safeParse(body);
+    const authResult = await requireAuth();
+    if (authResult instanceof NextResponse) return authResult;
+    const userId = authResult;
+
+    const raw = await parseJsonBody(req);
+    if (raw instanceof NextResponse) return raw;
+
+    const parsed = subjectSchema.safeParse(raw);
     if (!parsed.success) {
       return NextResponse.json(
-        { error: parsed.error.issues[0].message },
+        { error: parsed.error.issues[0]?.message ?? "Invalid input" },
         { status: 400 }
       );
     }
@@ -42,13 +51,14 @@ export async function POST(req: Request) {
       data: {
         name: parsed.data.name,
         color: parsed.data.color || "#6366f1",
-        userId: session.user.id,
+        userId,
       },
     });
 
     return NextResponse.json(subject, { status: 201 });
   } catch (error) {
-    console.error("Subjects POST error:", error);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+    return handleApiError(error, "subjects POST", {
+      fallbackMessage: "Failed to create subject.",
+    });
   }
 }

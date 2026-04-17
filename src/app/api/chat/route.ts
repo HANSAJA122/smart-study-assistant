@@ -1,38 +1,25 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { generateChatReply } from "@/lib/ollama";
 import { chatSchema } from "@/lib/validations";
-
-const SYSTEM_INSTRUCTIONS =
-  "You are a knowledgeable and friendly AI study tutor. Help students " +
-  "understand concepts, answer questions, provide clear explanations, " +
-  "suggest study strategies, and encourage learning. Keep answers clear, " +
-  "concise, and student-friendly. Use examples and analogies when they help. " +
-  "If a student asks something outside of studying, gently redirect them.";
-
-function unauthorized() {
-  return NextResponse.json({ error: "User not authenticated" }, { status: 401 });
-}
-
-/** Resolves a non-null user id from the session, or null if unauthenticated / invalid. */
-async function requireChatUserId(): Promise<string | null> {
-  const session = await auth();
-  if (!session?.user) return null;
-  const userId = session.user.id;
-  if (!userId || typeof userId !== "string") return null;
-
-  const user = await db.user.findUnique({
-    where: { id: userId },
-    select: { id: true },
-  });
-  return user?.id ?? null;
-}
+import {
+  assertTrustedOrigin,
+  handleApiError,
+  parseJsonBody,
+  requireAiRateLimit,
+  requireAuth,
+} from "@/lib/api-security";
+import {
+  CHAT_STUDY_TUTOR_SYSTEM_PROMPT,
+  isClearlyNonEducationalUserInput,
+  studyScopeRejectResponse,
+} from "@/lib/study-ai-scope";
 
 export async function GET() {
   try {
-    const userId = await requireChatUserId();
-    if (!userId) return unauthorized();
+    const authResult = await requireAuth();
+    if (authResult instanceof NextResponse) return authResult;
+    const userId = authResult;
 
     const messages = await db.chatMessage.findMany({
       where: { userId },
@@ -42,29 +29,40 @@ export async function GET() {
 
     return NextResponse.json(messages);
   } catch (error) {
-    console.error("Chat GET error:", error);
-    return NextResponse.json(
-      { error: "Failed to load chat history." },
-      { status: 500 }
-    );
+    return handleApiError(error, "chat GET");
   }
 }
 
 export async function POST(req: Request) {
   try {
-    const userId = await requireChatUserId();
-    if (!userId) return unauthorized();
+    const forbidden = assertTrustedOrigin(req);
+    if (forbidden) return forbidden;
 
-    const body = await req.json();
-    const parsed = chatSchema.safeParse(body);
+    const authResult = await requireAuth();
+    if (authResult instanceof NextResponse) {
+      console.warn("[api] chat POST: unauthenticated");
+      return authResult;
+    }
+    const userId = authResult;
+
+    const limited = requireAiRateLimit(userId);
+    if (limited !== true) return limited;
+
+    const raw = await parseJsonBody(req);
+    if (raw instanceof NextResponse) return raw;
+
+    const parsed = chatSchema.safeParse(raw);
     if (!parsed.success) {
       return NextResponse.json(
-        { error: parsed.error.issues[0].message },
+        { error: parsed.error.issues[0]?.message ?? "Invalid input" },
         { status: 400 }
       );
     }
 
-    // Fetch recent conversation for context (last 10 messages)
+    if (isClearlyNonEducationalUserInput(parsed.data.message)) {
+      return studyScopeRejectResponse("chat:message", parsed.data.message.slice(0, 80));
+    }
+
     const history = await db.chatMessage.findMany({
       where: { userId },
       orderBy: { createdAt: "desc" },
@@ -77,7 +75,7 @@ export async function POST(req: Request) {
     }));
 
     const reply = await generateChatReply(
-      SYSTEM_INSTRUCTIONS,
+      CHAT_STUDY_TUTOR_SYSTEM_PROMPT,
       conversationHistory,
       parsed.data.message
     );
@@ -89,7 +87,6 @@ export async function POST(req: Request) {
       );
     }
 
-    // Save both messages in a single transaction
     const [userMessage, assistantMessage] = await db.$transaction([
       db.chatMessage.create({
         data: {
@@ -109,18 +106,17 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ userMessage, assistantMessage });
   } catch (error) {
-    console.error("Chat POST error:", error);
-    const message =
-      error instanceof Error ? error.message : "Failed to get AI response.";
-    const status = message.includes("Cannot connect") || message.includes("not available") ? 503 : 500;
-    return NextResponse.json({ error: message }, { status });
+    return handleApiError(error, "chat POST", {
+      fallbackMessage: "Failed to get AI response.",
+    });
   }
 }
 
 export async function DELETE() {
   try {
-    const userId = await requireChatUserId();
-    if (!userId) return unauthorized();
+    const authResult = await requireAuth();
+    if (authResult instanceof NextResponse) return authResult;
+    const userId = authResult;
 
     await db.chatMessage.deleteMany({
       where: { userId },
@@ -128,10 +124,8 @@ export async function DELETE() {
 
     return NextResponse.json({ message: "Chat history cleared." });
   } catch (error) {
-    console.error("Chat DELETE error:", error);
-    return NextResponse.json(
-      { error: "Failed to clear chat history." },
-      { status: 500 }
-    );
+    return handleApiError(error, "chat DELETE", {
+      fallbackMessage: "Failed to clear chat history.",
+    });
   }
 }

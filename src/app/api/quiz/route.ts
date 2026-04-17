@@ -1,8 +1,19 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { generateJSON } from "@/lib/ollama";
-import { quizGenerateSchema } from "@/lib/validations";
+import { quizGenerateSchema, quizSubmitSchema } from "@/lib/validations";
+import {
+  assertTrustedOrigin,
+  handleApiError,
+  parseJsonBody,
+  requireAiRateLimit,
+  requireAuth,
+} from "@/lib/api-security";
+import {
+  buildQuizGeneratorSystemPrompt,
+  isClearlyNonEducationalUserInput,
+  studyScopeRejectResponse,
+} from "@/lib/study-ai-scope";
 
 interface GeneratedQuestion {
   question: string;
@@ -12,65 +23,70 @@ interface GeneratedQuestion {
 
 export async function GET() {
   try {
-    const session = await auth();
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const authResult = await requireAuth();
+    if (authResult instanceof NextResponse) return authResult;
+    const userId = authResult;
 
     const quizzes = await db.quiz.findMany({
-      where: { userId: session.user.id },
+      where: { userId },
       include: { questions: true },
       orderBy: { createdAt: "desc" },
     });
 
     return NextResponse.json(quizzes);
   } catch (error) {
-    console.error("Quiz GET error:", error);
-    return NextResponse.json(
-      { error: "Failed to load quizzes." },
-      { status: 500 }
-    );
+    return handleApiError(error, "quiz GET", { fallbackMessage: "Failed to load quizzes." });
   }
 }
 
 export async function POST(req: Request) {
   try {
-    const session = await auth();
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const forbidden = assertTrustedOrigin(req);
+    if (forbidden) return forbidden;
 
-    const body = await req.json();
-    const parsed = quizGenerateSchema.safeParse(body);
+    const authResult = await requireAuth();
+    if (authResult instanceof NextResponse) {
+      console.warn("[api] quiz POST: unauthenticated");
+      return authResult;
+    }
+    const userId = authResult;
+
+    const limited = requireAiRateLimit(userId);
+    if (limited !== true) return limited;
+
+    const raw = await parseJsonBody(req);
+    if (raw instanceof NextResponse) return raw;
+
+    const parsed = quizGenerateSchema.safeParse(raw);
     if (!parsed.success) {
       return NextResponse.json(
-        { error: parsed.error.issues[0].message },
+        { error: parsed.error.issues[0]?.message ?? "Invalid input" },
         { status: 400 }
       );
     }
 
     const { topic, numberOfQuestions, subjectId } = parsed.data;
 
+    if (isClearlyNonEducationalUserInput(topic)) {
+      return studyScopeRejectResponse("quiz:topic", topic.slice(0, 80));
+    }
+
     const questions = await generateJSON<GeneratedQuestion[]>(
-      "You are a quiz generator. Respond with a JSON object containing a single key " +
-        '"questions" whose value is an array.\n' +
-        `Create exactly ${numberOfQuestions} multiple-choice questions.\n` +
-        'Each element has keys: "question" (string), "options" (array of 4 strings), ' +
-        '"correctAnswer" (0-based index of the correct option).\n' +
-        "Example:\n" +
-        '{"questions":[{"question":"What is 2+2?","options":["1","3","4","5"],"correctAnswer":2}]}',
-      `Topic: ${topic}`,
+      buildQuizGeneratorSystemPrompt(numberOfQuestions),
+      `Topic or study focus for the quiz (stay strictly within educational material): ${topic}`,
       { temperature: 0.7, maxOutputTokens: 2500, wrapperKey: "questions" }
     );
 
-    if (!Array.isArray(questions) || questions.length === 0) {
+    if (!Array.isArray(questions)) {
       return NextResponse.json(
         { error: "AI failed to generate valid quiz questions. Try again." },
         { status: 502 }
       );
     }
+    if (questions.length === 0) {
+      return studyScopeRejectResponse("quiz:empty-model", topic.slice(0, 80));
+    }
 
-    // Validate every generated question before persisting
     const validated = questions.filter(
       (q) =>
         typeof q.question === "string" &&
@@ -91,7 +107,7 @@ export async function POST(req: Request) {
     const quiz = await db.quiz.create({
       data: {
         title: `Quiz: ${topic}`,
-        userId: session.user.id,
+        userId,
         subjectId: subjectId || null,
         total: validated.length,
         questions: {
@@ -107,32 +123,34 @@ export async function POST(req: Request) {
 
     return NextResponse.json(quiz, { status: 201 });
   } catch (error) {
-    console.error("Quiz POST error:", error);
-    const message =
-      error instanceof Error ? error.message : "Failed to generate quiz.";
-    const status = message.includes("Cannot connect") || message.includes("not available") ? 503 : 500;
-    return NextResponse.json({ error: message }, { status });
+    return handleApiError(error, "quiz POST", { fallbackMessage: "Failed to generate quiz." });
   }
 }
 
 export async function PUT(req: Request) {
   try {
-    const session = await auth();
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const forbidden = assertTrustedOrigin(req);
+    if (forbidden) return forbidden;
 
-    const { quizId, answers } = await req.json();
+    const authResult = await requireAuth();
+    if (authResult instanceof NextResponse) return authResult;
+    const userId = authResult;
 
-    if (!quizId || typeof answers !== "object") {
+    const raw = await parseJsonBody(req);
+    if (raw instanceof NextResponse) return raw;
+
+    const parsed = quizSubmitSchema.safeParse(raw);
+    if (!parsed.success) {
       return NextResponse.json(
-        { error: "quizId and answers are required." },
+        { error: parsed.error.issues[0]?.message ?? "Invalid input" },
         { status: 400 }
       );
     }
 
-    const quiz = await db.quiz.findUnique({
-      where: { id: quizId, userId: session.user.id },
+    const { quizId, answers } = parsed.data;
+
+    const quiz = await db.quiz.findFirst({
+      where: { id: quizId, userId },
       include: { questions: true },
     });
 
@@ -151,14 +169,14 @@ export async function PUT(req: Request) {
     }
 
     const updated = await db.quiz.update({
-      where: { id: quizId },
+      where: { id: quizId, userId },
       data: { score },
       include: { questions: true },
     });
 
     await db.progress.create({
       data: {
-        userId: session.user.id,
+        userId,
         type: "quiz",
         score: Math.round((score / quiz.total) * 100),
         subjectId: quiz.subjectId,
@@ -167,10 +185,6 @@ export async function PUT(req: Request) {
 
     return NextResponse.json(updated);
   } catch (error) {
-    console.error("Quiz PUT error:", error);
-    return NextResponse.json(
-      { error: "Failed to submit quiz." },
-      { status: 500 }
-    );
+    return handleApiError(error, "quiz PUT", { fallbackMessage: "Failed to submit quiz." });
   }
 }

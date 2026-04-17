@@ -1,40 +1,47 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { noteSchema } from "@/lib/validations";
+import {
+  assertTrustedOrigin,
+  handleApiError,
+  parseJsonBody,
+  requireAuth,
+} from "@/lib/api-security";
 
 export async function GET() {
   try {
-    const session = await auth();
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const authResult = await requireAuth();
+    if (authResult instanceof NextResponse) return authResult;
+    const userId = authResult;
 
     const notes = await db.note.findMany({
-      where: { userId: session.user.id },
+      where: { userId },
       include: { subject: { select: { name: true, color: true } } },
       orderBy: { createdAt: "desc" },
     });
 
     return NextResponse.json(notes);
   } catch (error) {
-    console.error("Notes GET error:", error);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+    return handleApiError(error, "notes GET", { fallbackMessage: "Failed to load notes." });
   }
 }
 
 export async function POST(req: Request) {
   try {
-    const session = await auth();
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const forbidden = assertTrustedOrigin(req);
+    if (forbidden) return forbidden;
 
-    const body = await req.json();
-    const parsed = noteSchema.safeParse(body);
+    const authResult = await requireAuth();
+    if (authResult instanceof NextResponse) return authResult;
+    const userId = authResult;
+
+    const raw = await parseJsonBody(req);
+    if (raw instanceof NextResponse) return raw;
+
+    const parsed = noteSchema.safeParse(raw);
     if (!parsed.success) {
       return NextResponse.json(
-        { error: parsed.error.issues[0].message },
+        { error: parsed.error.issues[0]?.message ?? "Invalid input" },
         { status: 400 }
       );
     }
@@ -42,37 +49,38 @@ export async function POST(req: Request) {
     const note = await db.note.create({
       data: {
         ...parsed.data,
-        userId: session.user.id,
+        userId,
       },
     });
 
     return NextResponse.json(note, { status: 201 });
   } catch (error) {
-    console.error("Notes POST error:", error);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+    return handleApiError(error, "notes POST", { fallbackMessage: "Failed to save note." });
   }
 }
 
 export async function DELETE(req: Request) {
   try {
-    const session = await auth();
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const authResult = await requireAuth();
+    if (authResult instanceof NextResponse) return authResult;
+    const userId = authResult;
 
     const { searchParams } = new URL(req.url);
     const id = searchParams.get("id");
-    if (!id) {
+    if (!id || id.length > 64) {
       return NextResponse.json({ error: "Note ID required" }, { status: 400 });
     }
 
-    await db.note.delete({
-      where: { id, userId: session.user.id },
+    const result = await db.note.deleteMany({
+      where: { id, userId },
     });
+
+    if (result.count === 0) {
+      return NextResponse.json({ error: "Note not found." }, { status: 404 });
+    }
 
     return NextResponse.json({ message: "Note deleted" });
   } catch (error) {
-    console.error("Notes DELETE error:", error);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+    return handleApiError(error, "notes DELETE", { fallbackMessage: "Failed to delete note." });
   }
 }

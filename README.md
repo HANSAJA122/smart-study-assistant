@@ -120,7 +120,7 @@ npm run dev
 
 Open **http://localhost:3000** (or the URL shown in the terminal) to use the app locally.
 
-**Vercel:** Set `AUTH_URL` (and optionally `NEXT_PUBLIC_APP_URL`) to your live site URL — never use `http://localhost:3000` in Vercel environment variables. The app resolves the public URL from `AUTH_URL` → `NEXT_PUBLIC_APP_URL` → `VERCEL_URL` → localhost for dev.
+**Vercel:** Set `AUTH_URL` (and optionally `NEXT_PUBLIC_APP_URL`) to your live site URL — never use `http://localhost:3000` in Vercel environment variables. If `AUTH_URL` or `NEXTAUTH_URL` is still `localhost` on Vercel, NextAuth middleware would redirect sign-in links to localhost; the app strips those on Vercel so the real deployment host is used, but you should fix the variables anyway. The app resolves the public URL from `AUTH_URL` → `NEXT_PUBLIC_APP_URL` → `VERCEL_URL` → localhost for dev.
 
 If using local Ollama, start it in a separate terminal first.
 

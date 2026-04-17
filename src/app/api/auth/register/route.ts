@@ -2,15 +2,24 @@ import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { db } from "@/lib/db";
 import { registerSchema } from "@/lib/validations";
+import {
+  handleApiError,
+  parseJsonBody,
+  requireRegisterRateLimit,
+} from "@/lib/api-security";
 
 export async function POST(req: Request) {
   try {
-    const body = await req.json();
-    const parsed = registerSchema.safeParse(body);
+    const limited = requireRegisterRateLimit(req);
+    if (limited !== true) return limited;
 
+    const raw = await parseJsonBody(req);
+    if (raw instanceof NextResponse) return raw;
+
+    const parsed = registerSchema.safeParse(raw);
     if (!parsed.success) {
       return NextResponse.json(
-        { error: parsed.error.issues[0].message },
+        { error: parsed.error.issues[0]?.message ?? "Invalid input" },
         { status: 400 }
       );
     }
@@ -27,19 +36,17 @@ export async function POST(req: Request) {
 
     const hashedPassword = await bcrypt.hash(password, 12);
 
-    const user = await db.user.create({
+    await db.user.create({
       data: { name, email, hashedPassword },
     });
 
     return NextResponse.json(
-      { message: "Account created successfully", userId: user.id },
+      { message: "Account created successfully" },
       { status: 201 }
     );
   } catch (error) {
-    console.error("Registration error:", error);
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 }
-    );
+    return handleApiError(error, "register POST", {
+      fallbackMessage: "Registration could not be completed.",
+    });
   }
 }

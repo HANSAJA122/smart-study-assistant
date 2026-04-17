@@ -1,40 +1,47 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { studyPlanSchema } from "@/lib/validations";
+import { plannerTaskToggleSchema, studyPlanSchema } from "@/lib/validations";
+import {
+  assertTrustedOrigin,
+  handleApiError,
+  parseJsonBody,
+  requireAuth,
+} from "@/lib/api-security";
 
 export async function GET() {
   try {
-    const session = await auth();
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const authResult = await requireAuth();
+    if (authResult instanceof NextResponse) return authResult;
+    const userId = authResult;
 
     const plans = await db.studyPlan.findMany({
-      where: { userId: session.user.id },
+      where: { userId },
       include: { tasks: true },
       orderBy: { createdAt: "desc" },
     });
 
     return NextResponse.json(plans);
   } catch (error) {
-    console.error("Planner GET error:", error);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+    return handleApiError(error, "planner GET", { fallbackMessage: "Failed to load plans." });
   }
 }
 
 export async function POST(req: Request) {
   try {
-    const session = await auth();
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const forbidden = assertTrustedOrigin(req);
+    if (forbidden) return forbidden;
 
-    const body = await req.json();
-    const parsed = studyPlanSchema.safeParse(body);
+    const authResult = await requireAuth();
+    if (authResult instanceof NextResponse) return authResult;
+    const userId = authResult;
+
+    const raw = await parseJsonBody(req);
+    if (raw instanceof NextResponse) return raw;
+
+    const parsed = studyPlanSchema.safeParse(raw);
     if (!parsed.success) {
       return NextResponse.json(
-        { error: parsed.error.issues[0].message },
+        { error: parsed.error.issues[0]?.message ?? "Invalid input" },
         { status: 400 }
       );
     }
@@ -46,7 +53,7 @@ export async function POST(req: Request) {
         title,
         description: description || null,
         subjectId: subjectId || null,
-        userId: session.user.id,
+        userId,
         startDate: new Date(startDate),
         endDate: new Date(endDate),
         tasks: tasks
@@ -63,26 +70,38 @@ export async function POST(req: Request) {
 
     return NextResponse.json(plan, { status: 201 });
   } catch (error) {
-    console.error("Planner POST error:", error);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+    return handleApiError(error, "planner POST", { fallbackMessage: "Failed to create plan." });
   }
 }
 
 export async function PUT(req: Request) {
   try {
-    const session = await auth();
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const forbidden = assertTrustedOrigin(req);
+    if (forbidden) return forbidden;
+
+    const authResult = await requireAuth();
+    if (authResult instanceof NextResponse) return authResult;
+    const userId = authResult;
+
+    const raw = await parseJsonBody(req);
+    if (raw instanceof NextResponse) return raw;
+
+    const parsed = plannerTaskToggleSchema.safeParse(raw);
+    if (!parsed.success) {
+      return NextResponse.json(
+        { error: parsed.error.issues[0]?.message ?? "Invalid input" },
+        { status: 400 }
+      );
     }
 
-    const { taskId } = await req.json();
+    const { taskId } = parsed.data;
 
     const task = await db.studyTask.findUnique({
       where: { id: taskId },
       include: { studyPlan: true },
     });
 
-    if (!task || task.studyPlan.userId !== session.user.id) {
+    if (!task || task.studyPlan.userId !== userId) {
       return NextResponse.json({ error: "Task not found" }, { status: 404 });
     }
 
@@ -91,43 +110,45 @@ export async function PUT(req: Request) {
       data: { completed: !task.completed },
     });
 
-    // Check if all tasks are completed, mark plan as completed
     const allTasks = await db.studyTask.findMany({
       where: { studyPlanId: task.studyPlanId },
     });
-    const allCompleted = allTasks.every((t) => t.id === taskId ? !task.completed : t.completed);
+    const allCompleted = allTasks.every((t) =>
+      t.id === taskId ? !task.completed : t.completed
+    );
     await db.studyPlan.update({
-      where: { id: task.studyPlanId },
+      where: { id: task.studyPlanId, userId },
       data: { completed: allCompleted },
     });
 
     return NextResponse.json(updated);
   } catch (error) {
-    console.error("Planner PUT error:", error);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+    return handleApiError(error, "planner PUT", { fallbackMessage: "Failed to update task." });
   }
 }
 
 export async function DELETE(req: Request) {
   try {
-    const session = await auth();
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const authResult = await requireAuth();
+    if (authResult instanceof NextResponse) return authResult;
+    const userId = authResult;
 
     const { searchParams } = new URL(req.url);
     const id = searchParams.get("id");
-    if (!id) {
+    if (!id || id.length > 64) {
       return NextResponse.json({ error: "Plan ID required" }, { status: 400 });
     }
 
-    await db.studyPlan.delete({
-      where: { id, userId: session.user.id },
+    const result = await db.studyPlan.deleteMany({
+      where: { id, userId },
     });
+
+    if (result.count === 0) {
+      return NextResponse.json({ error: "Plan not found." }, { status: 404 });
+    }
 
     return NextResponse.json({ message: "Plan deleted" });
   } catch (error) {
-    console.error("Planner DELETE error:", error);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+    return handleApiError(error, "planner DELETE", { fallbackMessage: "Failed to delete plan." });
   }
 }

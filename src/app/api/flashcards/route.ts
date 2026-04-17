@@ -1,8 +1,22 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { generateJSON } from "@/lib/ollama";
-import { flashcardGenerateSchema } from "@/lib/validations";
+import {
+  flashcardGenerateSchema,
+  flashcardToggleSchema,
+} from "@/lib/validations";
+import {
+  assertTrustedOrigin,
+  handleApiError,
+  parseJsonBody,
+  requireAiRateLimit,
+  requireAuth,
+} from "@/lib/api-security";
+import {
+  buildFlashcardGeneratorSystemPrompt,
+  isClearlyNonEducationalUserInput,
+  studyScopeRejectResponse,
+} from "@/lib/study-ai-scope";
 
 interface GeneratedCard {
   front: string;
@@ -11,65 +25,77 @@ interface GeneratedCard {
 
 export async function GET() {
   try {
-    const session = await auth();
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const authResult = await requireAuth();
+    if (authResult instanceof NextResponse) return authResult;
+    const userId = authResult;
 
     const flashcards = await db.flashcard.findMany({
-      where: { userId: session.user.id },
+      where: { userId },
       orderBy: { createdAt: "desc" },
     });
 
     return NextResponse.json(flashcards);
   } catch (error) {
-    console.error("Flashcards GET error:", error);
-    return NextResponse.json(
-      { error: "Failed to load flashcards." },
-      { status: 500 }
-    );
+    return handleApiError(error, "flashcards GET", {
+      fallbackMessage: "Failed to load flashcards.",
+    });
   }
 }
 
 export async function POST(req: Request) {
   try {
-    const session = await auth();
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const forbidden = assertTrustedOrigin(req);
+    if (forbidden) return forbidden;
 
-    const body = await req.json();
-    const parsed = flashcardGenerateSchema.safeParse(body);
+    const authResult = await requireAuth();
+    if (authResult instanceof NextResponse) {
+      console.warn("[api] flashcards POST: unauthenticated");
+      return authResult;
+    }
+    const userId = authResult;
+
+    const limited = requireAiRateLimit(userId);
+    if (limited !== true) return limited;
+
+    const raw = await parseJsonBody(req);
+    if (raw instanceof NextResponse) return raw;
+
+    const parsed = flashcardGenerateSchema.safeParse(raw);
     if (!parsed.success) {
       return NextResponse.json(
-        { error: parsed.error.issues[0].message },
+        { error: parsed.error.issues[0]?.message ?? "Invalid input" },
         { status: 400 }
       );
     }
 
     const { topic, numberOfCards, subjectId } = parsed.data;
 
+    if (isClearlyNonEducationalUserInput(topic)) {
+      return studyScopeRejectResponse("flashcards:topic", topic.slice(0, 80));
+    }
+
     const cards = await generateJSON<GeneratedCard[]>(
-      "You are a flashcard creator. Respond with a JSON object containing a single key " +
-        '"flashcards" whose value is an array.\n' +
-        `Create exactly ${numberOfCards} flashcards.\n` +
-        'Each element has keys: "front" (question or term) and "back" (answer or definition).\n' +
-        "Example:\n" +
-        '{"flashcards":[{"front":"What is HTTP?","back":"HyperText Transfer Protocol, used for web communication."}]}',
-      `Topic: ${topic}`,
+      buildFlashcardGeneratorSystemPrompt(numberOfCards),
+      `Topic or study focus for the flashcards (stay strictly within educational material): ${topic}`,
       { temperature: 0.7, maxOutputTokens: 2500, wrapperKey: "flashcards" }
     );
 
-    if (!Array.isArray(cards) || cards.length === 0) {
+    if (!Array.isArray(cards)) {
       return NextResponse.json(
         { error: "AI failed to generate flashcards. Try again." },
         { status: 502 }
       );
     }
+    if (cards.length === 0) {
+      return studyScopeRejectResponse("flashcards:empty-model", topic.slice(0, 80));
+    }
 
-    // Validate each card before persisting
     const validated = cards.filter(
-      (c) => typeof c.front === "string" && typeof c.back === "string" && c.front.length > 0 && c.back.length > 0
+      (c) =>
+        typeof c.front === "string" &&
+        typeof c.back === "string" &&
+        c.front.length > 0 &&
+        c.back.length > 0
     );
 
     if (validated.length === 0) {
@@ -79,7 +105,6 @@ export async function POST(req: Request) {
       );
     }
 
-    const userId = session.user.id;
     const created = await db.$transaction(
       validated.map((card) =>
         db.flashcard.create({
@@ -95,81 +120,82 @@ export async function POST(req: Request) {
 
     return NextResponse.json(created, { status: 201 });
   } catch (error) {
-    console.error("Flashcards POST error:", error);
-    const message =
-      error instanceof Error ? error.message : "Failed to generate flashcards.";
-    const status = message.includes("Cannot connect") || message.includes("not available") ? 503 : 500;
-    return NextResponse.json({ error: message }, { status });
+    return handleApiError(error, "flashcards POST", {
+      fallbackMessage: "Failed to generate flashcards.",
+    });
   }
 }
 
 export async function PUT(req: Request) {
   try {
-    const session = await auth();
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const forbidden = assertTrustedOrigin(req);
+    if (forbidden) return forbidden;
 
-    const { cardId } = await req.json();
-    if (!cardId || typeof cardId !== "string") {
+    const authResult = await requireAuth();
+    if (authResult instanceof NextResponse) return authResult;
+    const userId = authResult;
+
+    const raw = await parseJsonBody(req);
+    if (raw instanceof NextResponse) return raw;
+
+    const parsed = flashcardToggleSchema.safeParse(raw);
+    if (!parsed.success) {
       return NextResponse.json(
-        { error: "cardId is required." },
+        { error: parsed.error.issues[0]?.message ?? "Invalid input" },
         { status: 400 }
       );
     }
 
-    const card = await db.flashcard.findUnique({
-      where: { id: cardId, userId: session.user.id },
+    const { cardId } = parsed.data;
+
+    const card = await db.flashcard.findFirst({
+      where: { id: cardId, userId },
     });
 
     if (!card) {
-      return NextResponse.json(
-        { error: "Flashcard not found." },
-        { status: 404 }
-      );
+      return NextResponse.json({ error: "Flashcard not found." }, { status: 404 });
     }
 
     const updated = await db.flashcard.update({
-      where: { id: cardId },
+      where: { id: cardId, userId },
       data: { mastered: !card.mastered },
     });
 
     return NextResponse.json(updated);
   } catch (error) {
-    console.error("Flashcards PUT error:", error);
-    return NextResponse.json(
-      { error: "Failed to update flashcard." },
-      { status: 500 }
-    );
+    return handleApiError(error, "flashcards PUT", {
+      fallbackMessage: "Failed to update flashcard.",
+    });
   }
 }
 
 export async function DELETE(req: Request) {
   try {
-    const session = await auth();
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const authResult = await requireAuth();
+    if (authResult instanceof NextResponse) return authResult;
+    const userId = authResult;
 
     const { searchParams } = new URL(req.url);
     const id = searchParams.get("id");
-    if (!id) {
+    if (!id || id.length > 64) {
       return NextResponse.json(
         { error: "Flashcard ID is required." },
         { status: 400 }
       );
     }
 
-    await db.flashcard.delete({
-      where: { id, userId: session.user.id },
+    const deleted = await db.flashcard.deleteMany({
+      where: { id, userId },
     });
+
+    if (deleted.count === 0) {
+      return NextResponse.json({ error: "Flashcard not found." }, { status: 404 });
+    }
 
     return NextResponse.json({ message: "Flashcard deleted." });
   } catch (error) {
-    console.error("Flashcards DELETE error:", error);
-    return NextResponse.json(
-      { error: "Failed to delete flashcard." },
-      { status: 500 }
-    );
+    return handleApiError(error, "flashcards DELETE", {
+      fallbackMessage: "Failed to delete flashcard.",
+    });
   }
 }
