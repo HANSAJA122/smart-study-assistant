@@ -4,6 +4,7 @@ import Credentials from "next-auth/providers/credentials";
 import { getAppBaseUrl } from "./app-url";
 
 export const authConfig: NextAuthConfig = {
+  trustHost: true,
   session: { strategy: "jwt" },
   pages: {
     signIn: "/login",
@@ -70,13 +71,20 @@ export const authConfig: NextAuthConfig = {
     async session({ session, token }) {
       if (token.sub && session.user) {
         session.user.id = token.sub;
+        if (typeof token.email === "string") session.user.email = token.email;
+        if (token.name !== undefined) session.user.name = token.name;
+        if (token.picture !== undefined) session.user.image = token.picture;
       }
       return session;
     },
     async jwt({ token, user }) {
-      // Credentials sign-in: persist user id on the token so session.user.id works in API routes (e.g. production).
       if (user?.id) {
         token.sub = user.id;
+      }
+      if (user) {
+        if (user.email) token.email = user.email;
+        if ("name" in user) token.name = user.name;
+        if ("image" in user) token.picture = user.image;
       }
       return token;
     },
